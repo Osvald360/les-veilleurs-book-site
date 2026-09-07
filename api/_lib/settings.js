@@ -14,12 +14,13 @@ const FIELDS = [
   'singpayClientSecret',
   'singpayWallet',
   'singpayDisbursement',
+  'singpayWebhookToken',
   // Prix du livre (modifiable depuis le tableau de bord)
   'priceEur',        // ex. "19.90" — prix en euros (Stripe, PayPal, affichage)
   'priceXaf',        // ex. "13000" — prix en FCFA (Airtel/Moov via SingPay)
 ];
 
-const SECRET_FIELDS = ['stripeSecretKey', 'stripeWebhookSecret', 'paypalClientSecret', 'singpayClientSecret'];
+const SECRET_FIELDS = ['stripeSecretKey', 'stripeWebhookSecret', 'paypalClientSecret', 'singpayClientSecret', 'singpayWebhookToken'];
 
 export async function getSettings() {
   const raw = await store.get(SETTINGS_KEY);
