@@ -936,6 +936,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
 
       <button class="btn-primary" onclick="savePaymentSettings()">Enregistrer les paramètres de paiement</button>
       <p class="pay-save-note" id="paySaveNote"></p>
+      <p class="pay-help">🔒 <strong>Recommandé pour les secrets :</strong> plutôt que de les saisir ici, définis-les en variables d'environnement dans Vercel (Settings → Environment Variables) : <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>PAYPAL_CLIENT_SECRET</code>, <code>SINGPAY_CLIENT_ID</code>, <code>SINGPAY_CLIENT_SECRET</code>, <code>SINGPAY_WALLET</code>, <code>SINGPAY_WEBHOOK_TOKEN</code>… Une variable d'environnement prime toujours sur la valeur saisie dans ce formulaire.</p>
 
       <div class="pay-group" style="margin-top:26px;">
         <h3>Prix du livre</h3>

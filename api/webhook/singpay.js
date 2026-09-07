@@ -34,9 +34,9 @@ export default async function handler(req, res) {
 
   const settings = await getSettings();
 
-  // Jeton attendu : réglage du tableau de bord, ou variable d'environnement
-  // en secours (utile avant que la base ne soit configurée).
-  const expectedToken = settings.singpayWebhookToken || process.env.SINGPAY_WEBHOOK_TOKEN || '';
+  // Jeton attendu : variable d'environnement SINGPAY_WEBHOOK_TOKEN ou
+  // réglage du tableau de bord (getSettings fait déjà l'arbitrage).
+  const expectedToken = settings.singpayWebhookToken || '';
   if (expectedToken) {
     const provided = (req.query && req.query.token) || req.headers['x-webhook-token'];
     if (!tokenMatches(expectedToken, provided)) {

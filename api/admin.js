@@ -116,8 +116,8 @@ async function buildDiagnostics() {
     {
       key: 'singpayWebhook',
       label: 'Sécurité du webhook SingPay',
-      ok: !ready.airtel || Boolean(settings.singpayWebhookToken || process.env.SINGPAY_WEBHOOK_TOKEN),
-      detail: settings.singpayWebhookToken || process.env.SINGPAY_WEBHOOK_TOKEN
+      ok: !ready.airtel || Boolean(settings.singpayWebhookToken),
+      detail: settings.singpayWebhookToken
         ? 'Jeton secret enregistré : seules les notifications portant ce jeton peuvent confirmer un paiement.'
         : ready.airtel
           ? "Sans jeton secret, n'importe qui connaissant l'URL du webhook pourrait marquer une commande comme payée. Renseignez le jeton dans les réglages SingPay ci-dessous et ajoutez-le à l'URL de callback."
