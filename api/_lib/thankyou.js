@@ -1,7 +1,12 @@
 // E-mail de confirmation envoyé automatiquement dès qu'une commande passe
 // en « payée » (webhooks SingPay/Stripe, retour PayPal, ou marquage manuel
 // depuis le tableau de bord). Texte fixe validé par l'équipe éditoriale.
-// Seul Resend est nécessaire (RESEND_API_KEY + RESEND_FROM_EMAIL).
+//
+// Deux modes d'envoi, dans cet ordre de priorité :
+//   1. Gmail (GMAIL_USER + GMAIL_APP_PASSWORD) — mot de passe d'application
+//      Google, pour envoyer depuis une adresse @gmail.com.
+//   2. Resend (RESEND_API_KEY + RESEND_FROM_EMAIL) — nécessite un domaine
+//      vérifié chez Resend.
 
 const SUBJECT = 'Votre exemplaire est réservé : Les Veilleurs et l’Étude des Signes';
 
@@ -25,7 +30,8 @@ Bien à vous,`;
 const SIGNATURE = 'Équipe Éditoriale Mgr Michel Ambouroue';
 
 export async function sendThankYouEmail({ firstName, email, host, protocol = 'https' }) {
-  if (!process.env.RESEND_API_KEY) {
+  const gmailReady = Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  if (!gmailReady && !process.env.RESEND_API_KEY) {
     return { ok: false, skipped: 'missing_api_keys' };
   }
   try {
@@ -71,6 +77,26 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
 </table>
 </body></html>`;
 
+    const text = message + '\n\n' + SIGNATURE;
+
+    if (gmailReady) {
+      const { default: nodemailer } = await import('nodemailer');
+      const transport = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+      });
+      await transport.sendMail({
+        from: `"Les Veilleurs — Équipe Éditoriale" <${process.env.GMAIL_USER}>`,
+        to: email,
+        subject: SUBJECT,
+        html,
+        text,
+      });
+      return { ok: true };
+    }
+
     const sendRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
@@ -79,12 +105,12 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
         to: email,
         subject: SUBJECT,
         html,
-        text: message + '\n\n' + SIGNATURE,
+        text,
       }),
     });
     if (!sendRes.ok) return { ok: false, skipped: 'email_error', detail: await sendRes.text() };
     return { ok: true };
   } catch (e) {
-    return { ok: false, skipped: 'exception' };
+    return { ok: false, skipped: 'exception', detail: e && e.message };
   }
 }

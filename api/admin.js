@@ -126,12 +126,17 @@ async function buildDiagnostics() {
     },
     {
       key: 'email',
-      label: 'E-mail de remerciement',
-      ok: Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL),
+      label: 'E-mail de confirmation d’achat',
+      ok: Boolean(
+        (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) ||
+        (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL)
+      ),
       detail:
-        process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL
-          ? 'Envoi configuré.'
-          : "Non configuré : aucun e-mail ne sera envoyé après paiement (variables RESEND_API_KEY et RESEND_FROM_EMAIL).",
+        process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+          ? `Envoi configuré via Gmail (${process.env.GMAIL_USER}).`
+          : process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL
+            ? 'Envoi configuré via Resend.'
+            : "Non configuré : aucun e-mail ne sera envoyé après paiement. Variables GMAIL_USER + GMAIL_APP_PASSWORD (envoi depuis Gmail) ou RESEND_API_KEY + RESEND_FROM_EMAIL.",
       critical: false,
     },
     {
