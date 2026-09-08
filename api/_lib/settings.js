@@ -43,7 +43,10 @@ const ENV_FIELDS = {
 };
 
 export async function getSettings() {
-  const raw = await store.get(SETTINGS_KEY);
+  // Une base absente ou injoignable ne doit pas empêcher un site configuré
+  // entièrement par variables d'environnement de fonctionner.
+  let raw = null;
+  try { raw = await store.get(SETTINGS_KEY); } catch (e) {}
   const data = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
   const full = {};
   for (const f of FIELDS) {

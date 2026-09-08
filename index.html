@@ -1173,6 +1173,10 @@ async function selectMethod(id, ready){
         + '<br><span style="color:var(--ink-dim);font-size:0.85rem">La confirmation peut prendre quelques instants. Vous recevrez un e-mail dès la validation.</span>';
     } else if(d.error === 'phone_required'){
       document.getElementById('pendingNote').textContent = "Un numéro de téléphone est nécessaire pour le paiement Mobile Money. Reprenez la commande en indiquant votre numéro.";
+    } else if(d.error === 'order_not_found'){
+      document.getElementById('pendingNote').textContent = "Votre commande a expiré. Fermez cette fenêtre et reprenez l'achat.";
+    } else if(d.detail){
+      document.getElementById('pendingNote').textContent = "Le paiement n'a pas pu être lancé : " + d.detail;
     } else {
       document.getElementById('pendingNote').textContent = "Ce moyen de paiement n'est pas encore correctement configuré.";
     }

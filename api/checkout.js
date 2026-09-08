@@ -99,8 +99,14 @@ export default async function handler(req, res) {
         ? 'https://gateway.singpay.ga/v1/74/paiement'
         : 'https://gateway.singpay.ga/v1/62/paiement';
 
-      // Numéro au format attendu par SingPay : chiffres uniquement.
-      const msisdn = String(order.phone).replace(/[^0-9]/g, '');
+      // Numéro au format attendu par SingPay : chiffres uniquement, en
+      // format local gabonais. Les acheteurs saisissent souvent leur numéro
+      // en international (+241 74 XX XX XX) : on retire le préfixe pays et
+      // on rétablit le 0 initial des numéros à 9 chiffres.
+      let msisdn = String(order.phone).replace(/[^0-9]/g, '');
+      if (msisdn.startsWith('00241')) msisdn = msisdn.slice(5);
+      else if (msisdn.startsWith('241') && msisdn.length > 9) msisdn = msisdn.slice(3);
+      if (msisdn.length === 8) msisdn = '0' + msisdn;
 
       const body = {
         amount: amountXAF,
@@ -126,7 +132,15 @@ export default async function handler(req, res) {
       try { data = await r.json(); } catch (e) {}
 
       if (!r.ok) {
-        return res.status(200).json({ ready: false, error: (data && (data.message || data.error)) || 'singpay_error' });
+        // Trace complète dans les logs Vercel pour diagnostiquer un refus
+        // de la passerelle (identifiants, portefeuille, format du numéro…).
+        console.error('singpay_error', r.status, JSON.stringify(data));
+        const detail = data && (data.message || data.error);
+        return res.status(200).json({
+          ready: false,
+          error: 'singpay_error',
+          detail: (Array.isArray(detail) ? detail.join(', ') : detail) || `HTTP ${r.status}`,
+        });
       }
 
       // Paiement lancé : le client doit maintenant valider sur son téléphone.
