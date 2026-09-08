@@ -40,11 +40,17 @@ export default async function handler(req, res) {
   if (expectedToken) {
     const provided = (req.query && req.query.token) || req.headers['x-webhook-token'];
     if (!tokenMatches(expectedToken, provided)) {
+      console.error('singpay_webhook bad_token');
       return res.status(401).json({ error: 'bad_token' });
     }
   }
 
-  const body = req.body || {};
+  // Selon le Content-Type utilisé par SingPay, le corps peut arriver déjà
+  // décodé (objet) ou brut (chaîne JSON) : on accepte les deux.
+  let body = req.body || {};
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (e) { body = {}; }
+  }
   const { status, result, reference, transaction_id, amount } = body;
 
   if (!reference) {
@@ -62,6 +68,7 @@ export default async function handler(req, res) {
     if (!order) {
       // On renvoie 200 pour éviter que SingPay ne réessaie indéfiniment,
       // mais on signale que la commande est introuvable.
+      console.error('singpay_webhook order_not_found', reference);
       return res.status(200).json({ ok: false, reason: 'order_not_found' });
     }
 
@@ -75,6 +82,7 @@ export default async function handler(req, res) {
     const expectedXAF = getPrice(settings).xaf;
     const receivedXAF = Number(amount);
     if (!Number.isFinite(receivedXAF) || receivedXAF < expectedXAF) {
+      console.error('singpay_webhook amount_mismatch', reference, 'reçu:', amount, 'attendu:', expectedXAF);
       return res.status(200).json({ ok: false, reason: 'amount_mismatch' });
     }
 
