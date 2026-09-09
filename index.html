@@ -1079,6 +1079,8 @@ async function submitInfo(e){
     return false;
   }
   buyerInfo = data;
+  currentOrderId = null;
+  let orderError = '';
   try{
     const r = await fetch('/api/order', {
       method:'POST',
@@ -1087,7 +1089,15 @@ async function submitInfo(e){
     });
     const d = await r.json();
     currentOrderId = d.orderId || null;
+    if(d.error === 'sale_closed') orderError = "La vente n'est plus ouverte : la commande ne peut pas être enregistrée.";
   }catch(err){}
+  /* Sans commande enregistrée, inutile d'ouvrir le choix du paiement :
+     on explique le problème ici, au moment où il se produit. */
+  if(!currentOrderId){
+    document.getElementById('formErr').textContent = orderError ||
+      "Impossible d'enregistrer la commande pour le moment. Vérifiez votre connexion et réessayez.";
+    return false;
+  }
   closeInfo();
   await renderMethods();
   document.getElementById('pendingNote').textContent = '';
