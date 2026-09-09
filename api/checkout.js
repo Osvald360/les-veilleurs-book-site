@@ -40,7 +40,11 @@ export default async function handler(req, res) {
         body: params,
       });
       const data = await r.json();
-      if (!r.ok) return res.status(200).json({ ready: false, error: data.error?.message });
+      if (!r.ok) {
+        // Raison exacte du refus de Stripe : à l'écran et dans les logs.
+        console.error('stripe_error', r.status, data.error?.message);
+        return res.status(200).json({ ready: false, error: 'stripe_error', detail: data.error?.message || `HTTP ${r.status}` });
+      }
       return res.status(200).json({ ready: true, url: data.url });
     }
 
@@ -56,7 +60,14 @@ export default async function handler(req, res) {
         body: 'grant_type=client_credentials',
       });
       const tokenData = await tokenRes.json();
-      if (!tokenRes.ok) return res.status(200).json({ ready: false, error: 'paypal_auth_failed' });
+      if (!tokenRes.ok) {
+        console.error('paypal_auth_failed', tokenRes.status, JSON.stringify(tokenData));
+        return res.status(200).json({
+          ready: false,
+          error: 'paypal_auth_failed',
+          detail: 'Identifiants PayPal refusés' + (settings.paypalMode !== 'live' ? ' (mode test/sandbox actif)' : '') + '.',
+        });
+      }
 
       const orderRes = await fetch(`${base}/v2/checkout/orders`, {
         method: 'POST',
@@ -76,7 +87,11 @@ export default async function handler(req, res) {
         }),
       });
       const orderData = await orderRes.json();
-      if (!orderRes.ok) return res.status(200).json({ ready: false, error: 'paypal_order_failed' });
+      if (!orderRes.ok) {
+        console.error('paypal_order_failed', orderRes.status, JSON.stringify(orderData));
+        const ppDetail = (orderData.details && orderData.details[0] && orderData.details[0].description) || orderData.message;
+        return res.status(200).json({ ready: false, error: 'paypal_order_failed', detail: ppDetail || `HTTP ${orderRes.status}` });
+      }
       const approveLink = (orderData.links || []).find((l) => l.rel === 'approve');
       return res.status(200).json({ ready: true, url: approveLink?.href });
     }
@@ -161,6 +176,7 @@ export default async function handler(req, res) {
 
     return res.status(400).json({ error: 'unknown_method' });
   } catch (e) {
-    return res.status(200).json({ ready: false, error: 'exception' });
+    console.error('checkout_exception', method, e && e.message);
+    return res.status(200).json({ ready: false, error: 'exception', detail: 'Erreur interne : ' + ((e && e.message) || 'inconnue') });
   }
 }
