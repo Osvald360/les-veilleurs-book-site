@@ -829,6 +829,11 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
   <div class="admin-dash" id="adminDash" style="display:none;">
     <div class="admin-head">
       <h2>Tableau de bord — Les Veilleurs</h2>
+      <!-- Domaine affiché en clair : plusieurs copies du site existent,
+           ce badge évite de configurer la mauvaise. -->
+      <p style="margin:2px 0 0;font-size:12px;letter-spacing:1px;color:#C9A961;font-family:Arial,Helvetica,sans-serif;">
+        Site : <script>document.write(window.location.host)</script>
+      </p>
       <div class="admin-actions">
         <button class="btn-small" onclick="refreshAdmin()">Actualiser</button>
         <button class="btn-small" onclick="resetData()">Réinitialiser les données</button>
