@@ -1593,10 +1593,16 @@ async function loadPaymentSettings(){
     const locked = s._locked || {};
     for(const field in locked){
       const input = document.getElementById('p_' + field);
-      if(input && locked[field]){
+      if(!input) continue;
+      if(locked[field]){
+        if(input.dataset.origPlaceholder === undefined) input.dataset.origPlaceholder = input.placeholder || '';
         input.disabled = true;
         input.value = '';
         input.placeholder = 'Géré par le propriétaire du site (variable d’environnement)';
+      } else if(input.dataset.origPlaceholder !== undefined){
+        input.disabled = false;
+        input.placeholder = input.dataset.origPlaceholder;
+        delete input.dataset.origPlaceholder;
       }
     }
   }catch(e){}

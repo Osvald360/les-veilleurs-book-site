@@ -25,6 +25,12 @@ export async function markOrderPaid(id, extra = {}) {
   return writeOrder(id, { status: 'paid', paidAt: new Date().toISOString(), ...extra });
 }
 
+// Complète une commande sans toucher à son statut (montant facturé,
+// e-mail de remerciement envoyé...).
+export async function updateOrder(id, patch) {
+  return writeOrder(id, patch);
+}
+
 // Marquage manuel depuis le tableau de bord (virement, mobile money encaissé
 // hors ligne, remise en main propre...).
 export async function setOrderStatus(id, status, note = '') {

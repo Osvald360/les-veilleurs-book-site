@@ -1,5 +1,5 @@
 import { getSettings, getPrice } from './_lib/settings.js';
-import { getOrder } from './_lib/orders.js';
+import { getOrder, updateOrder } from './_lib/orders.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -107,6 +107,11 @@ export default async function handler(req, res) {
       if (msisdn.startsWith('00241')) msisdn = msisdn.slice(5);
       else if (msisdn.startsWith('241') && msisdn.length > 9) msisdn = msisdn.slice(3);
       if (msisdn.length === 8) msisdn = '0' + msisdn;
+
+      // Le montant facturé est figé sur la commande AVANT le push : le
+      // webhook vérifiera le règlement contre cette valeur, même si le
+      // prix affiché change entre le push et la confirmation.
+      await updateOrder(orderId, { amountXAF, provider: 'singpay' });
 
       const body = {
         amount: amountXAF,

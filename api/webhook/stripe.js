@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { getSettings } from '../_lib/settings.js';
-import { markOrderPaid, getOrder } from '../_lib/orders.js';
+import { markOrderPaid, getOrder, updateOrder } from '../_lib/orders.js';
 import { sendThankYouEmail } from '../_lib/thankyou.js';
 
 // Stripe exige le corps brut (non parsé) pour vérifier la signature.
@@ -27,7 +27,15 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const raw = await readRawBody(req);
-  const settings = await getSettings();
+
+  // Réglages injoignables → 500 : Stripe retentera. Valider sans avoir pu
+  // vérifier la signature serait une faille.
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (e) {
+    return res.status(500).json({ error: 'settings_unavailable' });
+  }
 
   if (settings.stripeWebhookSecret) {
     const valid = verifyStripeSignature(raw, req.headers['stripe-signature'], settings.stripeWebhookSecret);
@@ -48,9 +56,16 @@ export default async function handler(req, res) {
       const order = await getOrder(orderId);
       if (order && order.status !== 'paid') {
         await markOrderPaid(orderId, { method: 'card', provider: 'stripe' });
-        const host = req.headers['x-forwarded-host'] || req.headers.host;
-        const protocol = req.headers['x-forwarded-proto'] || 'https';
-        await sendThankYouEmail({ firstName: order.firstName, email: order.email, host, protocol });
+        // E-mail une seule fois, marqué sur la commande pour qu'un
+        // marquage manuel ultérieur ne le renvoie pas en double.
+        if (order.email && !order.thankYouSent) {
+          const host = req.headers['x-forwarded-host'] || req.headers.host;
+          const protocol = req.headers['x-forwarded-proto'] || 'https';
+          const sent = await sendThankYouEmail({ firstName: order.firstName, email: order.email, host, protocol });
+          if (sent && sent.ok) {
+            await updateOrder(orderId, { thankYouSent: new Date().toISOString() });
+          }
+        }
       }
     }
   }

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getOrder, markOrderPaid } from '../_lib/orders.js';
+import { getOrder, markOrderPaid, updateOrder } from '../_lib/orders.js';
 import { sendThankYouEmail } from '../_lib/thankyou.js';
 import { getSettings, getPrice } from '../_lib/settings.js';
 
@@ -32,7 +32,15 @@ function tokenMatches(expected, provided) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const settings = await getSettings();
+  // Réglages injoignables → 500 : SingPay retentera plus tard. Valider
+  // sans avoir pu vérifier le jeton ni le montant serait une faille.
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (e) {
+    console.error('singpay_webhook settings_unavailable');
+    return res.status(500).json({ error: 'settings_unavailable' });
+  }
 
   // Jeton attendu : variable d'environnement SINGPAY_WEBHOOK_TOKEN ou
   // réglage du tableau de bord (getSettings fait déjà l'arbitrage).
@@ -46,8 +54,9 @@ export default async function handler(req, res) {
   }
 
   // Selon le Content-Type utilisé par SingPay, le corps peut arriver déjà
-  // décodé (objet) ou brut (chaîne JSON) : on accepte les deux.
+  // décodé (objet), brut (chaîne JSON) ou binaire (Buffer) : on accepte tout.
   let body = req.body || {};
+  if (Buffer.isBuffer(body)) body = body.toString('utf8');
   if (typeof body === 'string') {
     try { body = JSON.parse(body); } catch (e) { body = {}; }
   }
@@ -76,10 +85,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, ignored: true, reason: 'not_successful' });
     }
 
-    // Le montant encaissé doit couvrir le prix du livre. Un montant absent
-    // ou insuffisant ne valide pas la commande : elle reste « en attente »
-    // et se règle à la main depuis le tableau de bord si besoin.
-    const expectedXAF = getPrice(settings).xaf;
+    // Le montant encaissé doit couvrir ce qui a été facturé à CETTE
+    // commande (mémorisé au moment du push), pour qu'un changement de
+    // prix entre le push et la confirmation ne bloque pas un paiement
+    // légitime. Un montant absent ou insuffisant ne valide pas la
+    // commande : elle reste « en attente », réglable depuis le dashboard.
+    const charged = Number(order.amountXAF);
+    const expectedXAF = Number.isFinite(charged) && charged > 0 ? charged : getPrice(settings).xaf;
     const receivedXAF = Number(amount);
     if (!Number.isFinite(receivedXAF) || receivedXAF < expectedXAF) {
       console.error('singpay_webhook amount_mismatch', reference, 'reçu:', amount, 'attendu:', expectedXAF);
@@ -94,17 +106,22 @@ export default async function handler(req, res) {
         amountXAF: receivedXAF,
       });
 
-      // E-mail de remerciement (une seule fois).
+      // E-mail de remerciement (une seule fois) : l'envoi réussi est
+      // marqué sur la commande pour qu'un marquage manuel ultérieur
+      // depuis le dashboard ne le renvoie pas en double.
       if (order.email && !order.thankYouSent) {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         const protocol = req.headers['x-forwarded-proto'] || 'https';
         try {
-          await sendThankYouEmail({
+          const sent = await sendThankYouEmail({
             firstName: order.firstName || '',
             email: order.email,
             host,
             protocol,
           });
+          if (sent && sent.ok) {
+            await updateOrder(reference, { thankYouSent: new Date().toISOString() });
+          }
         } catch (e) {}
       }
     }

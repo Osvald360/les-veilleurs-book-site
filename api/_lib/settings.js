@@ -42,12 +42,16 @@ const ENV_FIELDS = {
   singpayWebhookToken: 'SINGPAY_WEBHOOK_TOKEN',
 };
 
+// Réglages bruts tels que stockés en base, sans les variables
+// d'environnement. Une erreur de lecture remonte à l'appelant : mieux
+// vaut un échec franc qu'une décision prise sur des réglages vides.
+async function readStored() {
+  const raw = await store.get(SETTINGS_KEY);
+  return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+}
+
 export async function getSettings() {
-  // Une base absente ou injoignable ne doit pas empêcher un site configuré
-  // entièrement par variables d'environnement de fonctionner.
-  let raw = null;
-  try { raw = await store.get(SETTINGS_KEY); } catch (e) {}
-  const data = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+  const data = await readStored();
   const full = {};
   for (const f of FIELDS) {
     const env = ENV_FIELDS[f] ? process.env[ENV_FIELDS[f]] : '';
@@ -75,7 +79,10 @@ export async function getPublicSettingsStatus() {
 }
 
 export async function saveSettings(partial) {
-  const current = await getSettings();
+  // Base de départ = données stockées brutes, jamais les valeurs venues
+  // des variables d'environnement : un enregistrement du tableau de bord
+  // ne doit pas recopier les secrets de l'hébergeur dans la base.
+  const current = await readStored();
   const updated = { ...current };
   for (const f of FIELDS) {
     // On ne remplace un champ que si une nouvelle valeur non vide est envoyée,
