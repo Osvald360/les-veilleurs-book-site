@@ -1587,6 +1587,18 @@ async function loadPaymentSettings(){
     if(document.getElementById('p_priceXaf')) document.getElementById('p_priceXaf').value = s.priceXaf || '';
     const cb = document.getElementById('singpayCallbackUrl');
     if(cb) cb.textContent = window.location.origin + '/api/webhook/singpay?token=VOTRE_JETON';
+
+    /* Champs gérés par variable d'environnement : verrouillés à l'écran,
+       car toute saisie serait ignorée (la variable prime toujours). */
+    const locked = s._locked || {};
+    for(const field in locked){
+      const input = document.getElementById('p_' + field);
+      if(input && locked[field]){
+        input.disabled = true;
+        input.value = '';
+        input.placeholder = 'Géré par le propriétaire du site (variable d’environnement)';
+      }
+    }
   }catch(e){}
 }
 

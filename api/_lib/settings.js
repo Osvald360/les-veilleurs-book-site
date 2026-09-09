@@ -64,6 +64,13 @@ export async function getPublicSettingsStatus() {
   for (const f of FIELDS) {
     status[f] = SECRET_FIELDS.includes(f) ? Boolean(s[f]) : s[f] || '';
   }
+  // Champs verrouillés par une variable d'environnement : le tableau de
+  // bord les affiche comme gérés par l'hébergeur, car toute saisie y
+  // serait ignorée (la variable prime toujours).
+  status._locked = {};
+  for (const f of FIELDS) {
+    status._locked[f] = Boolean(ENV_FIELDS[f] && process.env[ENV_FIELDS[f]]);
+  }
   return status;
 }
 
