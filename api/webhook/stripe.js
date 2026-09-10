@@ -49,7 +49,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
 
-  if (event.type === 'checkout.session.completed') {
+  // Deux événements Stripe confirment un paiement selon la configuration
+  // de l'endpoint ; l'ID de commande est posé sur les deux objets.
+  if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
     const session = event.data.object;
     const orderId = session.metadata?.orderId;
     if (orderId) {

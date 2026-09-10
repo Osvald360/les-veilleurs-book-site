@@ -30,6 +30,10 @@ export default async function handler(req, res) {
         success_url: `${origin}/?paiement=succes`,
         cancel_url: `${origin}/?paiement=annule`,
         'metadata[orderId]': orderId,
+        // L'ID de commande est aussi posé sur le PaymentIntent : le webhook
+        // retrouve ainsi la commande quel que soit l'événement écouté
+        // (checkout.session.completed ou payment_intent.succeeded).
+        'payment_intent_data[metadata][orderId]': orderId,
       });
       const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',
