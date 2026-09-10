@@ -167,6 +167,14 @@ export default async function handler(req, res) {
         });
       }
 
+      // L'identifiant de transaction SingPay est mémorisé sur la commande :
+      // il permet au site de vérifier lui-même l'aboutissement du paiement
+      // (endpoint /api/singpay-status), sans dépendre du callback.
+      const txId = data && data.transaction && data.transaction.id ? String(data.transaction.id) : null;
+      if (txId) {
+        try { await updateOrder(orderId, { singpayTxId: txId }); } catch (e) {}
+      }
+
       // Paiement lancé : le client doit maintenant valider sur son téléphone.
       // On ne redirige pas ; on affiche une consigne d'attente côté navigateur.
       return res.status(200).json({

@@ -1192,7 +1192,8 @@ async function selectMethod(id, ready){
       const note = document.getElementById('pendingNote');
       note.innerHTML = '<strong style="color:var(--gold-soft)">Demande envoyée sur votre téléphone.</strong><br>'
         + (d.message || 'Composez votre code Mobile Money pour valider le paiement.')
-        + '<br><span style="color:var(--ink-dim);font-size:0.85rem">La confirmation peut prendre quelques instants. Vous recevrez un e-mail dès la validation.</span>';
+        + '<br><span style="color:var(--ink-dim);font-size:0.85rem">Cette page se mettra à jour automatiquement dès la validation du paiement.</span>';
+      pollSingpay(currentOrderId);
     } else if(d.error === 'phone_required'){
       document.getElementById('pendingNote').textContent = "Un numéro de téléphone est nécessaire pour le paiement Mobile Money. Reprenez la commande en indiquant votre numéro.";
     } else if(d.error === 'order_not_found'){
@@ -1205,6 +1206,37 @@ async function selectMethod(id, ready){
   }catch(e){
     document.getElementById('pendingNote').textContent = "Impossible de contacter le serveur de paiement.";
   }
+}
+
+/* Après un push mobile money, le site vérifie lui-même auprès de SingPay
+   (via /api/singpay-status) que le paiement a abouti, toutes les 5 s
+   pendant 5 minutes, puis affiche l'écran « Paiement confirmé ». */
+let singpayPollTimer = null;
+function pollSingpay(orderId){
+  if(!orderId) return;
+  if(singpayPollTimer) clearInterval(singpayPollTimer);
+  let tries = 0;
+  singpayPollTimer = setInterval(async () => {
+    if(++tries > 60){ clearInterval(singpayPollTimer); return; }
+    try{
+      const r = await fetch('/api/singpay-status?orderId=' + encodeURIComponent(orderId));
+      const d = await r.json();
+      if(d.paid){
+        clearInterval(singpayPollTimer);
+        window.location.href = '/?paiement=succes';
+      } else if(d.failed){
+        clearInterval(singpayPollTimer);
+        const reasons = {
+          balanceerror: 'solde insuffisant',
+          passworderror: 'code erroné',
+          timeouterror: 'délai de validation dépassé',
+          error: "refusé par l'opérateur"
+        };
+        document.getElementById('pendingNote').textContent =
+          'Le paiement n\'a pas abouti (' + (reasons[d.reason] || 'refusé') + '). Aucun montant ne sera prélevé, vous pouvez réessayer.';
+      }
+    }catch(e){}
+  }, 5000);
 }
 
 /* ---------- Countdown (24h depuis le premier lancement, partagé via le serveur) ---------- */
