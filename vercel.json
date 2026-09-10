@@ -5,5 +5,11 @@
     "api/**/*.js": {
       "maxDuration": 15
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/webhook/singpay/:token",
+      "destination": "/api/webhook/singpay?token=:token"
+    }
+  ]
 }
