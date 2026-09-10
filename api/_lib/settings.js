@@ -47,6 +47,13 @@ const ENV_FIELDS = {
   gmailAppPassword: 'GMAIL_APP_PASSWORD',
 };
 
+// Champs où le tableau de bord PRIME sur la variable d'environnement.
+// Pour l'e-mail d'expédition, pouvoir corriger l'adresse ou le mot de
+// passe d'application sans passer par Vercel vaut mieux que le
+// verrouillage : contrairement aux clés de paiement, un détournement
+// n'oriente aucun flux d'argent. La variable reste un simple repli.
+const DASHBOARD_FIRST = ['gmailUser', 'gmailAppPassword'];
+
 // Réglages bruts tels que stockés en base, sans les variables
 // d'environnement. Une erreur de lecture remonte à l'appelant : mieux
 // vaut un échec franc qu'une décision prise sur des réglages vides.
@@ -60,7 +67,9 @@ export async function getSettings() {
   const full = {};
   for (const f of FIELDS) {
     const env = ENV_FIELDS[f] ? process.env[ENV_FIELDS[f]] : '';
-    full[f] = env || data[f] || '';
+    full[f] = DASHBOARD_FIRST.includes(f)
+      ? data[f] || env || ''
+      : env || data[f] || '';
   }
   return full;
 }
@@ -75,10 +84,13 @@ export async function getPublicSettingsStatus() {
   }
   // Champs verrouillés par une variable d'environnement : le tableau de
   // bord les affiche comme gérés par l'hébergeur, car toute saisie y
-  // serait ignorée (la variable prime toujours).
+  // serait ignorée (la variable prime toujours). Les champs où le
+  // tableau de bord prime restent modifiables.
   status._locked = {};
   for (const f of FIELDS) {
-    status._locked[f] = Boolean(ENV_FIELDS[f] && process.env[ENV_FIELDS[f]]);
+    status._locked[f] = Boolean(
+      ENV_FIELDS[f] && process.env[ENV_FIELDS[f]] && !DASHBOARD_FIRST.includes(f)
+    );
   }
   return status;
 }
