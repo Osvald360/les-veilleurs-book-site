@@ -47,6 +47,10 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
   try {
     const message = buildMessage((firstName || '').trim());
     const photoUrl = `${protocol}://${host}/author-email.jpg`;
+    // Via Gmail, la photo est incorporée à l'e-mail (cid) plutôt que
+    // chargée depuis le site : un lien vers un domaine *.vercel.app dans
+    // le corps du message aggrave le score anti-spam.
+    const photoSrc = gmailReady ? 'cid:authorphoto' : photoUrl;
 
     // Mise en page en tableaux : c'est la seule structure fiable dans les
     // logiciels de messagerie (Gmail, Outlook, Apple Mail...). Flexbox,
@@ -73,7 +77,7 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">
           <tr>
             <td width="64" valign="top" style="padding-right:16px;">
-              <img src="${photoUrl}" width="64" height="96" alt="Mgr Michel Ambouroue" style="display:block;width:64px;height:96px;border:0;outline:none;text-decoration:none;">
+              <img src="${photoSrc}" width="64" height="96" alt="Mgr Michel Ambouroue" style="display:block;width:64px;height:96px;border:0;outline:none;text-decoration:none;">
             </td>
             <td valign="middle" style="font-family:Georgia,'Times New Roman',serif;">
               <p style="margin:0;font-size:15px;color:#E8D9AE;">&Eacute;quipe &Eacute;ditoriale Mgr Michel Ambouroue</p>
@@ -104,6 +108,7 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
         subject: SUBJECT,
         html,
         text,
+        attachments: [{ filename: 'mgr-michel-ambouroue.jpg', path: photoUrl, cid: 'authorphoto' }],
       });
       return { ok: true };
     }
