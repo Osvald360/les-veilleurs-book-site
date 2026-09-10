@@ -41,6 +41,7 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
   } catch (e) {}
   const gmailReady = Boolean(gmailUser && gmailAppPassword);
   if (!gmailReady && !process.env.RESEND_API_KEY) {
+    console.error('email_send_failed missing_api_keys : ni Gmail (adresse + mot de passe d’application) ni Resend configurés');
     return { ok: false, skipped: 'missing_api_keys' };
   }
   try {
@@ -118,9 +119,16 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
         text,
       }),
     });
-    if (!sendRes.ok) return { ok: false, skipped: 'email_error', detail: await sendRes.text() };
+    if (!sendRes.ok) {
+      const detail = await sendRes.text();
+      console.error('email_send_failed resend', sendRes.status, detail);
+      return { ok: false, skipped: 'email_error', detail };
+    }
     return { ok: true };
   } catch (e) {
+    // Erreur SMTP typique : "Invalid login: 535..." = adresse et mot de
+    // passe d'application qui ne correspondent pas au même compte Google.
+    console.error('email_send_failed exception', e && e.message);
     return { ok: false, skipped: 'exception', detail: e && e.message };
   }
 }

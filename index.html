@@ -1546,9 +1546,9 @@ async function setOrder(id, status){
     });
     const d = await r.json();
     if(status === 'paid' && sendEmail){
-      if(d.email && d.email.ok) alert("Commande marquée payée. Message de remerciement envoyé.");
-      else if(d.email && d.email.skipped === 'missing_api_keys') alert("Commande marquée payée.\n\nL'e-mail n'a pas été envoyé : les clés RESEND_API_KEY et ANTHROPIC_API_KEY ne sont pas encore renseignées sur Vercel.");
-      else if(d.email) alert("Commande marquée payée, mais l'e-mail n'est pas parti (" + (d.email.skipped || 'erreur') + ").");
+      if(d.email && d.email.ok) alert("Commande marquée payée. E-mail de confirmation envoyé.");
+      else if(d.email && d.email.skipped === 'missing_api_keys') alert("Commande marquée payée.\n\nL'e-mail n'a pas été envoyé : renseignez l'adresse Gmail et son mot de passe d'application dans les réglages de paiement ci-dessous.");
+      else if(d.email) alert("Commande marquée payée, mais l'e-mail n'est pas parti :\n\n" + (d.email.detail || d.email.skipped || 'erreur inconnue'));
     }
     refreshAdmin();
   }catch(e){ alert("La modification n'a pas pu être enregistrée."); }
