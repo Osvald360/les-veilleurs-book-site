@@ -15,12 +15,15 @@ const FIELDS = [
   'singpayWallet',
   'singpayDisbursement',
   'singpayWebhookToken',
+  // E-mail de confirmation d'achat (envoi via Gmail)
+  'gmailUser',
+  'gmailAppPassword',
   // Prix du livre (modifiable depuis le tableau de bord)
   'priceEur',        // ex. "19.90" — prix en euros (Stripe, PayPal, affichage)
   'priceXaf',        // ex. "13000" — prix en FCFA (Airtel/Moov via SingPay)
 ];
 
-const SECRET_FIELDS = ['stripeSecretKey', 'stripeWebhookSecret', 'paypalClientSecret', 'singpayClientSecret', 'singpayWebhookToken'];
+const SECRET_FIELDS = ['stripeSecretKey', 'stripeWebhookSecret', 'paypalClientSecret', 'singpayClientSecret', 'singpayWebhookToken', 'gmailAppPassword'];
 
 // Chaque réglage peut aussi être fourni en variable d'environnement Vercel.
 // C'est la voie recommandée pour les secrets : ils ne transitent alors
@@ -40,6 +43,8 @@ const ENV_FIELDS = {
   singpayWallet: 'SINGPAY_WALLET',
   singpayDisbursement: 'SINGPAY_DISBURSEMENT',
   singpayWebhookToken: 'SINGPAY_WEBHOOK_TOKEN',
+  gmailUser: 'GMAIL_USER',
+  gmailAppPassword: 'GMAIL_APP_PASSWORD',
 };
 
 // Réglages bruts tels que stockés en base, sans les variables

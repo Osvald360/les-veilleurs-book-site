@@ -3,10 +3,12 @@
 // depuis le tableau de bord). Texte fixe validé par l'équipe éditoriale.
 //
 // Deux modes d'envoi, dans cet ordre de priorité :
-//   1. Gmail (GMAIL_USER + GMAIL_APP_PASSWORD) — mot de passe d'application
-//      Google, pour envoyer depuis une adresse @gmail.com.
+//   1. Gmail — adresse + mot de passe d'application Google, saisis dans le
+//      tableau de bord (réglages « E-mail de confirmation ») ou fournis en
+//      variables d'environnement GMAIL_USER + GMAIL_APP_PASSWORD.
 //   2. Resend (RESEND_API_KEY + RESEND_FROM_EMAIL) — nécessite un domaine
 //      vérifié chez Resend.
+import { getSettings } from './settings.js';
 
 const SUBJECT = 'Votre exemplaire est réservé : Les Veilleurs et l’Étude des Signes';
 
@@ -30,7 +32,14 @@ Bien à vous,`;
 const SIGNATURE = 'Équipe Éditoriale Mgr Michel Ambouroue';
 
 export async function sendThankYouEmail({ firstName, email, host, protocol = 'https' }) {
-  const gmailReady = Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  let gmailUser = '';
+  let gmailAppPassword = '';
+  try {
+    const s = await getSettings();
+    gmailUser = s.gmailUser || '';
+    gmailAppPassword = s.gmailAppPassword || '';
+  } catch (e) {}
+  const gmailReady = Boolean(gmailUser && gmailAppPassword);
   if (!gmailReady && !process.env.RESEND_API_KEY) {
     return { ok: false, skipped: 'missing_api_keys' };
   }
@@ -85,10 +94,11 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
         host: 'smtp.gmail.com',
         port: 465,
         secure: true,
-        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+        // Le mot de passe d'application se copie parfois avec ses espaces.
+        auth: { user: gmailUser, pass: gmailAppPassword.replace(/\s+/g, '') },
       });
       await transport.sendMail({
-        from: `"Les Veilleurs — Équipe Éditoriale" <${process.env.GMAIL_USER}>`,
+        from: `"Les Veilleurs — Équipe Éditoriale" <${gmailUser}>`,
         to: email,
         subject: SUBJECT,
         html,

@@ -128,15 +128,15 @@ async function buildDiagnostics() {
       key: 'email',
       label: 'E-mail de confirmation d’achat',
       ok: Boolean(
-        (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) ||
+        (settings.gmailUser && settings.gmailAppPassword) ||
         (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL)
       ),
       detail:
-        process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
-          ? `Envoi configuré via Gmail (${process.env.GMAIL_USER}).`
+        settings.gmailUser && settings.gmailAppPassword
+          ? `Envoi configuré via Gmail (${settings.gmailUser}).`
           : process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL
             ? 'Envoi configuré via Resend.'
-            : "Non configuré : aucun e-mail ne sera envoyé après paiement. Variables GMAIL_USER + GMAIL_APP_PASSWORD (envoi depuis Gmail) ou RESEND_API_KEY + RESEND_FROM_EMAIL.",
+            : "Non configuré : aucun e-mail ne sera envoyé après paiement. Renseignez l'adresse Gmail et son mot de passe d'application dans les réglages ci-dessous.",
       critical: false,
     },
     {
