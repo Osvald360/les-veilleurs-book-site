@@ -1533,8 +1533,8 @@ function renderOrders(){
 async function setOrder(id, status){
   let sendEmail = false;
   if(status === 'paid'){
-    if(!confirm('Marquer cette commande comme PAYÉE ?')) return;
-    sendEmail = confirm("Envoyer aussi le message de remerciement à l'acheteur ?\n\n(OK = envoyer · Annuler = ne pas envoyer)");
+    if(!confirm('Marquer cette commande comme PAYÉE ?\n\nL\'e-mail de confirmation partira automatiquement (une seule fois par commande).')) return;
+    sendEmail = true; // même comportement qu'un paiement en ligne
   } else {
     if(!confirm('Repasser cette commande en attente ?')) return;
   }
