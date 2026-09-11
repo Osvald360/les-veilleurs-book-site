@@ -755,6 +755,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
 
     <div class="price-card">
       <div class="price-amount js-price-eur">19,90&nbsp;€</div>
+      <div class="price-xaf" style="font-family:Georgia,'Times New Roman',serif;font-size:1.15rem;color:var(--gold-soft,#C9A961);margin-top:2px;">soit <span class="js-price-xaf">13&nbsp;000&nbsp;FCFA</span> en Mobile Money</div>
       <p class="price-note">Prix de lancement · livraison numérique et physique</p>
       <div class="pay-methods">
         <span class="pay-chip">Carte bancaire</span>
@@ -804,7 +805,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
   <div class="modal">
     <button class="modal-close" onclick="closeCheckout()">✕</button>
     <h3>Choisir un moyen de paiement</h3>
-    <p class="sub">Les Veilleurs et l'étude des signes — <span class="js-price-eur">19,90&nbsp;€</span></p>
+    <p class="sub">Les Veilleurs et l'étude des signes — <span class="js-price-eur">19,90&nbsp;€</span> · <span class="js-price-xaf">13&nbsp;000&nbsp;FCFA</span></p>
     <div id="methodList"></div>
     <div class="method-alert" id="methodAlert"></div>
     <p class="pending-note" id="pendingNote"></p>
@@ -1709,11 +1710,13 @@ async function savePaymentSettings(){
 window.currentPriceEur = 19.90;
 window.currentPriceXaf = 13000;
 window.formatEur = function(v){ return (Number(v)||0).toFixed(2).replace('.', ',') + '\u00A0\u20AC'; };
+window.formatXaf = function(v){ return String(Math.round(Number(v)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0') + '\u00A0FCFA'; };
 window.applyPrice = function(price){
   if(!price) return;
   if(price.eur) window.currentPriceEur = Number(price.eur);
   if(price.xaf) window.currentPriceXaf = Number(price.xaf);
   document.querySelectorAll('.js-price-eur').forEach(function(el){ el.innerHTML = formatEur(window.currentPriceEur); });
+  document.querySelectorAll('.js-price-xaf').forEach(function(el){ el.innerHTML = formatXaf(window.currentPriceXaf || 13000); });
 };
 
 /* ---------- Message de retour après paiement ---------- */
