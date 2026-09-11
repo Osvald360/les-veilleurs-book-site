@@ -1550,7 +1550,8 @@ function renderOrders(){
                 : o.status==='cancelled' ? '<span class="badge cancelled">Annulé</span>'
                 : '<span class="badge pending">En attente</span>';
     const act = o.status==='paid'
-      ? `<button class="row-act" onclick="setOrder('${o.id}','pending')">Annuler le paiement</button>`
+      ? (o.thankYouSent ? '' : `<button class="row-act" onclick="sendOrderEmail('${o.id}')">Envoyer l'e-mail</button>`)
+        + `<button class="row-act" onclick="setOrder('${o.id}','pending')">Annuler le paiement</button>`
       : `<button class="row-act" onclick="setOrder('${o.id}','paid')">Marquer payé</button>`;
     return `<tr>
       <td>${date}</td>
@@ -1561,6 +1562,24 @@ function renderOrders(){
       <td>${act}</td>
     </tr>`;
   }).join('');
+}
+
+/* Renvoi de l'e-mail de confirmation à une commande payée qui ne l'a pas
+   reçu. Refusé côté serveur si l'e-mail a déjà été délivré (anti-doublon). */
+async function sendOrderEmail(id){
+  if(!confirm("Envoyer l'e-mail de confirmation à cet acheteur ?")) return;
+  try{
+    const r = await adminFetch('send-email', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const d = await r.json();
+    if(d.ok) alert('E-mail de confirmation envoyé.');
+    else if(d.reason === 'already_sent') alert('Cet acheteur a déjà reçu son e-mail de confirmation.');
+    else alert("L'e-mail n'est pas parti :\n\n" + (d.detail || d.skipped || d.reason || 'erreur inconnue'));
+    refreshAdmin();
+  }catch(e){ alert("Échec de l'envoi."); }
 }
 
 async function setOrder(id, status){

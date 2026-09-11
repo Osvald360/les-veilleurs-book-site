@@ -8,7 +8,7 @@
 
 import { store, storageReady, storageHealth } from './_lib/store.js';
 import { saleState } from './launch.js';
-import { listOrders, clearOrders, setOrderStatus, getOrder } from './_lib/orders.js';
+import { listOrders, clearOrders, setOrderStatus, getOrder, updateOrder } from './_lib/orders.js';
 import {
   getPublicSettingsStatus,
   saveSettings,
@@ -278,6 +278,28 @@ export default async function handler(req, res) {
           ));
         }
         return res.status(200).json({ ...updated, email });
+      }
+
+      // Renvoi de l'e-mail de confirmation à une commande payée qui ne l'a
+      // pas reçu (envoi raté au moment du paiement). La protection
+      // anti-doublon reste : refusé si l'e-mail a déjà été délivré.
+      case 'send-email': {
+        const { id } = req.body || {};
+        if (!id) return res.status(400).json({ error: 'bad_request' });
+        const order = await getOrder(id);
+        if (!order) return res.status(404).json({ error: 'not_found' });
+        if (order.status !== 'paid') return res.status(200).json({ ok: false, reason: 'not_paid' });
+        if (!order.email) return res.status(200).json({ ok: false, reason: 'no_email' });
+        if (order.thankYouSent) return res.status(200).json({ ok: false, reason: 'already_sent' });
+        const host = req.headers['x-forwarded-host'] || req.headers.host;
+        const proto = req.headers['x-forwarded-proto'] || 'https';
+        const sent = await sendThankYouEmail({
+          firstName: order.firstName || '', email: order.email, host, protocol: proto,
+        });
+        if (sent && sent.ok) {
+          await updateOrder(id, { thankYouSent: new Date().toISOString() });
+        }
+        return res.status(200).json(sent);
       }
 
       case 'export': {
