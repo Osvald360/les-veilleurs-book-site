@@ -1,6 +1,7 @@
 import { store, storageReady } from './_lib/store.js';
 import { listOrders } from './_lib/orders.js';
 import { getSettings, getPrice } from './_lib/settings.js';
+import { sweepPendingSingpay } from './_lib/singpay.js';
 
 // Endpoint public : état de la vente, compte à rebours et exemplaires restants.
 // Tout est piloté depuis le tableau de bord (onglet Système → Contrôle de la vente).
@@ -71,7 +72,15 @@ export default async function handler(req, res) {
     });
   }
   try {
-    return res.status(200).json({ ...(await saleState()), degraded: false });
+    const state = await saleState();
+    // Filet de sécurité : re-vérifie les paiements mobile money restés en
+    // attente (au plus une fois par minute, voir _lib/singpay.js), pour
+    // confirmer même si l'acheteur a fermé la page avant la confirmation.
+    await sweepPendingSingpay({
+      host: req.headers['x-forwarded-host'] || req.headers.host,
+      protocol: req.headers['x-forwarded-proto'] || 'https',
+    });
+    return res.status(200).json({ ...state, degraded: false });
   } catch (e) {
     const now = Date.now();
     return res.status(200).json({
