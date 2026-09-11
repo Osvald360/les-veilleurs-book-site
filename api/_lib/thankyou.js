@@ -102,13 +102,31 @@ export async function sendThankYouEmail({ firstName, email, host, protocol = 'ht
         // Le mot de passe d'application se copie parfois avec ses espaces.
         auth: { user: gmailUser, pass: gmailAppPassword.replace(/\s+/g, '') },
       });
+
+      // La photo est récupérée nous-mêmes et jointe en pièce intégrée.
+      // Si elle est indisponible, l'e-mail part sans elle : une image ne
+      // doit jamais empêcher la confirmation d'achat d'arriver.
+      let attachments = [];
+      let htmlGmail = html;
+      try {
+        const imgRes = await fetch(photoUrl);
+        if (imgRes.ok) {
+          const buf = Buffer.from(await imgRes.arrayBuffer());
+          attachments = [{ filename: 'mgr-michel-ambouroue.jpg', content: buf, cid: 'authorphoto' }];
+        }
+      } catch (e) {}
+      if (attachments.length === 0) {
+        console.error('email_photo_unavailable', photoUrl);
+        htmlGmail = html.replace('cid:authorphoto', photoUrl);
+      }
+
       await transport.sendMail({
         from: `"Les Veilleurs — Équipe Éditoriale" <${gmailUser}>`,
         to: email,
         subject: SUBJECT,
-        html,
+        html: htmlGmail,
         text,
-        attachments: [{ filename: 'mgr-michel-ambouroue.jpg', path: photoUrl, cid: 'authorphoto' }],
+        attachments,
       });
       return { ok: true };
     }
