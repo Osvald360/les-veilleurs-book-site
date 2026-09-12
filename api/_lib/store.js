@@ -41,6 +41,7 @@ function need() {
 
 export const store = {
   get: (k) => need().get(k),
+  mget: (ks) => need().mget(...ks),
   set: (k, v) => need().set(k, v),
   setnx: (k, v) => need().setnx(k, v),
   del: (k) => need().del(k),

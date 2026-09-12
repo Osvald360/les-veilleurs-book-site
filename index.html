@@ -1039,7 +1039,8 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
 
   const missing = document.getElementById('videoMissing');
   v.addEventListener('error', ()=>{ if(missing) missing.hidden = false; });
-  v.querySelector('source')?.addEventListener('error', ()=>{ if(missing) missing.hidden = false; });
+  var vSrc = v.querySelector('source');
+  if(vSrc) vSrc.addEventListener('error', ()=>{ if(missing) missing.hidden = false; });
   v.play().catch(()=>{});
 
   if(muteBtn){
@@ -1574,8 +1575,8 @@ function renderAdmin(data){
 /* ---------- Commandes : recherche, filtre, actions ---------- */
 function renderOrders(){
   const orders = adminData.orders || [];
-  const q = (document.getElementById('orderSearch')?.value || '').toLowerCase().trim();
-  const f = document.getElementById('orderFilter')?.value || '';
+  const q = ((document.getElementById('orderSearch') || {}).value || '').toLowerCase().trim();
+  const f = (document.getElementById('orderFilter') || {}).value || '';
   const body = document.getElementById('ordersBody');
 
   const list = orders.filter(o=>{
@@ -1698,7 +1699,7 @@ async function setOrder(id, status){
    produit un fichier ne contenant que les commandes payées. */
 async function exportOrders(){
   try{
-    const f = document.getElementById('orderFilter')?.value || '';
+    const f = (document.getElementById('orderFilter') || {}).value || '';
     const r = await adminFetch('export' + (f ? '&status=' + encodeURIComponent(f) : ''));
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
@@ -1982,6 +1983,9 @@ initCountdown();
       sale = d;
       if(typeof window.applyPrice === 'function') window.applyPrice(d.price);
       applyState();
+      // Dernier état connu, réaffiché immédiatement au prochain chargement
+      // (utile sur connexion lente : pas de « -- » en attendant le réseau).
+      try{ localStorage.setItem('saleStateCache', JSON.stringify(d)); }catch(e2){}
     }catch(e){
       if(!sale && !saleRetryTimer){
         saleRetryTimer = setTimeout(function(){ saleRetryTimer = null; loadSale(); }, 4000);
@@ -2040,6 +2044,15 @@ initCountdown();
     if(typeof _showAdminTab === 'function') _showAdminTab(tab);
     if(tab === 'pay') window.loadStockAdmin();
   };
+
+  // Affichage immédiat du dernier état connu (mémorisé lors d'une visite
+  // précédente), le temps que le réseau réponde. Les horodatages étant
+  // absolus, le compte à rebours repart juste ; le vrai état du serveur
+  // le remplace dès la première réponse.
+  try{
+    const cached = JSON.parse(localStorage.getItem('saleStateCache') || 'null');
+    if(cached && cached.status){ sale = cached; applyState(); }
+  }catch(e){}
 
   loadSale();
   setInterval(tick, 1000);

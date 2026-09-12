@@ -21,16 +21,19 @@ function num(raw, fallback) {
 export async function saleState() {
   const now = Date.now();
 
-  const startRaw = await store.get('launchTime');
-  const hours = num(await store.get('launchDurationHours'), DEFAULT_HOURS);
-  const total = num(await store.get('stockTotal'), DEFAULT_TOTAL);
-  const forcedClosed = (await store.get('saleClosed')) ? true : false;
-
-  let sold = 0;
-  try {
-    const orders = await listOrders(1000);
-    sold = orders.filter((o) => o && o.status === 'paid').length;
-  } catch (e) {}
+  // Tout est lu en parallèle : chaque aller-retour Redis évité compte pour
+  // les visiteurs sur connexion mobile lente.
+  const [startRaw, hoursRaw, totalRaw, closedRaw, ordersRes] = await Promise.all([
+    store.get('launchTime'),
+    store.get('launchDurationHours'),
+    store.get('stockTotal'),
+    store.get('saleClosed'),
+    listOrders(1000).catch(() => []),
+  ]);
+  const hours = num(hoursRaw, DEFAULT_HOURS);
+  const total = num(totalRaw, DEFAULT_TOTAL);
+  const forcedClosed = closedRaw ? true : false;
+  const sold = ordersRes.filter((o) => o && o.status === 'paid').length;
   const remaining = Math.max(0, total - sold);
 
   // Pas encore de date d'ouverture : la vente n'a jamais été lancée.
@@ -63,6 +66,7 @@ export async function saleState() {
 export default async function handler(req, res) {
   if (!storageReady) {
     const now = Date.now();
+    res.setHeader('Cache-Control', 'no-store'); // réponse de secours : ne jamais la mettre en cache
     return res.status(200).json({
       now, status: 'open', open: true,
       startTs: now, endTs: now + DEFAULT_HOURS * 3600 * 1000,
@@ -86,9 +90,15 @@ export default async function handler(req, res) {
         protocol: req.headers['x-forwarded-proto'] || 'https',
       }));
     } catch (e) {}
+    // Cache CDN : le bord Vercel sert cet état pendant 5 s (et jusqu'à 60 s
+    // en le rafraîchissant en arrière-plan, 10 min si la fonction est en
+    // erreur). Les visiteurs — notamment sur mobile au Gabon — reçoivent
+    // une réponse quasi instantanée même quand la fonction est lente.
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=60, stale-if-error=600');
     return res.status(200).json({ ...state, degraded: false });
   } catch (e) {
     const now = Date.now();
+    res.setHeader('Cache-Control', 'no-store'); // réponse de secours : ne jamais la mettre en cache
     return res.status(200).json({
       now, status: 'open', open: true,
       startTs: now, endTs: now + DEFAULT_HOURS * 3600 * 1000,

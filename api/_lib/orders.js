@@ -63,8 +63,17 @@ export async function setOrderStatus(id, status, note = '') {
 export async function listOrders(limit = 200) {
   const ids = (await store.lrange('orders:index', 0, limit - 1)) || [];
   if (ids.length === 0) return [];
-  const orders = await Promise.all(ids.map((id) => getOrder(id)));
-  return orders.filter(Boolean);
+  // Un seul aller-retour Redis (MGET) au lieu d'une requête par commande :
+  // cette liste est relue à chaque visite (comptage des ventes), sa latence
+  // conditionne le temps de réponse de la page publique.
+  const raws = (await store.mget(ids.map((id) => `order:${id}`))) || [];
+  return raws
+    .map((raw) => {
+      if (!raw) return null;
+      if (typeof raw !== 'string') return raw;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    })
+    .filter(Boolean);
 }
 
 export async function clearOrders() {
