@@ -292,9 +292,11 @@ export default async function handler(req, res) {
         const proto = req.headers['x-forwarded-proto'] || 'https';
         const all = await listOrders(300);
         const pending = all.filter((o) => o && o.status === 'pending');
-        const batch = pending.slice(0, 20);
+        // Lot de 10 interrogé en parallèle : l'interrogation séquentielle
+        // dépassait la durée maximale d'exécution de la fonction.
+        const batch = pending.slice(0, 10);
         const out = { examinees: batch.length, payees: 0, echouees: 0, inconnues: 0, restantes: Math.max(0, pending.length - batch.length) };
-        for (const o of batch) {
+        await Promise.all(batch.map(async (o) => {
           try {
             const verdict = await confirmSingpayOrder(o, { host, protocol: proto, tryReference: true });
             if (verdict === 'paid') out.payees++;
@@ -305,7 +307,7 @@ export default async function handler(req, res) {
           } catch (e) {
             out.inconnues++;
           }
-        }
+        }));
         return res.status(200).json(out);
       }
 
