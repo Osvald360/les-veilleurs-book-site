@@ -880,6 +880,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
 
     <div id="tabStats">
       <div class="stat-grid" id="statGrid"></div>
+    <p id="statNote" style="font-size:0.75rem;color:var(--ink-dim);margin:-28px 0 32px;"></p>
           <h3 style="font-size:1rem; margin-bottom:6px; color:var(--gold-soft);">Moyens de paiement souhaités</h3>
       <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Nombre d'acheteurs ayant sélectionné chaque moyen. Un même acheteur peut en consulter plusieurs avant de choisir.</p>
       <table class="admin-table" id="methodTable"><tbody></tbody></table>
@@ -1506,9 +1507,15 @@ function renderAdmin(data){
   const txns = data.transactions || [];
   const orders = data.orders || [];
   const stock = data.stock || {};
-  const paid = orders.filter(o=>o.status==='paid').length;
+  const paidOrders = orders.filter(o=>o.status==='paid');
+  const paid = paidOrders.length;
   const conversion = visits ? ((paid/visits)*100).toFixed(1) : '0.0';
-  const revenue = (paid * (window.currentPriceEur || 19.90)).toFixed(2);
+  /* Recettes réelles, par monnaie, à partir des montants mémorisés sur
+     chaque commande (les commandes payées sans montant mémorisé — d'avant
+     cette fonction — sont comptées à part). */
+  const totalXaf = paidOrders.reduce((s,o)=> s + (Number(o.amountXAF)>0 ? Number(o.amountXAF) : 0), 0);
+  const totalEur = paidOrders.reduce((s,o)=> s + (Number(o.amountEur)>0 ? Number(o.amountEur) : 0), 0);
+  const sansMontant = paidOrders.filter(o=> !(Number(o.amountXAF)>0) && !(Number(o.amountEur)>0)).length;
   // Une même personne peut consulter plusieurs moyens de paiement : on compte
   // les acheteurs arrivés à l'étape du paiement, pas le nombre de clics.
   const auPaiement = new Set(txns.map(t => t.orderId).filter(Boolean)).size
@@ -1517,13 +1524,18 @@ function renderAdmin(data){
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-card"><div class="stat-num">${visits}</div><div class="stat-label">Visiteurs</div></div>
     <div class="stat-card"><div class="stat-num">${paid}</div><div class="stat-label">Ventes confirmées</div></div>
-    <div class="stat-card"><div class="stat-num">${revenue} €</div><div class="stat-label">Recettes</div></div>
+    <div class="stat-card"><div class="stat-num">${formatXaf(totalXaf)}</div><div class="stat-label">Recettes Mobile Money${sansMontant ? ' *' : ''}</div></div>
+    <div class="stat-card"><div class="stat-num">${formatEur(totalEur)}</div><div class="stat-label">Recettes carte / PayPal${sansMontant ? ' *' : ''}</div></div>
     <div class="stat-card"><div class="stat-num">${stock.remaining !== undefined ? stock.remaining : '—'}</div><div class="stat-label">Exemplaires restants</div></div>
     <div class="stat-card"><div class="stat-num">${orders.length}</div><div class="stat-label">Coordonnées collectées</div></div>
     <div class="stat-card"><div class="stat-num">${orders.filter(o=>o.status==='pending').length}</div><div class="stat-label">En attente de paiement</div></div>
     <div class="stat-card"><div class="stat-num">${conversion}%</div><div class="stat-label">Taux de conversion</div></div>
     <div class="stat-card"><div class="stat-num">${auPaiement}</div><div class="stat-label">Arrivés au paiement</div></div>
   `;
+  const noteMontants = document.getElementById('statNote');
+  if(noteMontants) noteMontants.textContent = sansMontant
+    ? `* ${sansMontant} vente(s) confirmée(s) sans montant mémorisé (payées avant le suivi des montants) : utilisez « Rapprocher SingPay » ou les relevés Stripe/PayPal pour les compléter.`
+    : '';
 
   renderOrders();
 
