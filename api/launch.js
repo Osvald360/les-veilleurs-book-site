@@ -1,3 +1,4 @@
+import { waitUntil } from '@vercel/functions';
 import { store, storageReady } from './_lib/store.js';
 import { listOrders } from './_lib/orders.js';
 import { getSettings, getPrice } from './_lib/settings.js';
@@ -76,10 +77,15 @@ export default async function handler(req, res) {
     // Filet de sécurité : re-vérifie les paiements mobile money restés en
     // attente (au plus une fois par minute, voir _lib/singpay.js), pour
     // confirmer même si l'acheteur a fermé la page avant la confirmation.
-    await sweepPendingSingpay({
-      host: req.headers['x-forwarded-host'] || req.headers.host,
-      protocol: req.headers['x-forwarded-proto'] || 'https',
-    });
+    // En arrière-plan (waitUntil) : le balayage peut prendre plusieurs
+    // secondes (vérifications SingPay + e-mails) et, attendu ici, il faisait
+    // expirer la requête — la page restait alors figée sur « -- ».
+    try {
+      waitUntil(sweepPendingSingpay({
+        host: req.headers['x-forwarded-host'] || req.headers.host,
+        protocol: req.headers['x-forwarded-proto'] || 'https',
+      }));
+    } catch (e) {}
     return res.status(200).json({ ...state, degraded: false });
   } catch (e) {
     const now = Date.now();
