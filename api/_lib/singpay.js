@@ -39,11 +39,14 @@ export async function confirmSingpayOrder(order, { host, protocol = 'https' }) {
       console.error('singpay_confirm reference_mismatch', order.id, ref);
       return 'pending';
     }
+    // Contrairement au webhook (appelable par n'importe qui), cette réponse
+    // vient de l'API SingPay authentifiée : elle fait foi. Le montant peut
+    // différer du facturé (SingPay renvoie parfois le net, commission
+    // déduite) : on le trace sans bloquer la confirmation.
     const charged = Number(order.amountXAF) || getPrice(settings).xaf;
     const received = Number(tx.amount);
     if (Number.isFinite(received) && received < charged) {
-      console.error('singpay_confirm amount_mismatch', order.id, 'reçu:', received, 'attendu:', charged);
-      return 'pending';
+      console.error('singpay_confirm amount_note', order.id, 'reçu:', received, 'facturé:', charged);
     }
 
     await markOrderPaid(order.id, {
@@ -76,6 +79,11 @@ export async function confirmSingpayOrder(order, { host, protocol = 'https' }) {
   if (['passworderror', 'balanceerror', 'timeouterror', 'error'].includes(result)) {
     return 'failed:' + result;
   }
+
+  // Trace de diagnostic : ce que SingPay répond pour une transaction
+  // ni aboutie ni échouée (utile si le vocabulaire de leur API évolue).
+  console.error('singpay_confirm pending', order.id,
+    JSON.stringify({ http: r.status, status: tx.status, result: tx.result, reference: tx.reference }).slice(0, 300));
   return 'pending';
 }
 
