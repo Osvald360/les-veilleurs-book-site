@@ -881,6 +881,12 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
     <div id="tabStats">
       <div class="stat-grid" id="statGrid"></div>
     <p id="statNote" style="font-size:0.75rem;color:var(--ink-dim);margin:-28px 0 32px;"></p>
+      <h3 style="font-size:1rem; margin-bottom:6px; color:var(--gold-soft);">Ventes confirmées par moyen</h3>
+      <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Nombre de paiements aboutis pour chaque moyen, avec le montant encaissé correspondant.</p>
+      <table class="admin-table" style="margin-bottom:30px;">
+        <thead><tr><th>Moyen</th><th>Ventes</th><th>Montant encaissé</th></tr></thead>
+        <tbody id="ventesMoyenBody"></tbody>
+      </table>
           <h3 style="font-size:1rem; margin-bottom:6px; color:var(--gold-soft);">Moyens de paiement souhaités</h3>
       <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Nombre d'acheteurs ayant sélectionné chaque moyen. Un même acheteur peut en consulter plusieurs avant de choisir.</p>
       <table class="admin-table" id="methodTable"><tbody></tbody></table>
@@ -1559,6 +1565,31 @@ function renderAdmin(data){
   if(noteMontants) noteMontants.textContent = manuelles
     ? `⚠ ${manuelles} commande(s) « Payé (manuel) » sans preuve d'encaissement, NON comptée(s) dans les recettes : vérifiez-les contre les relevés (relevé OK → « Rapprocher SingPay » posera la preuve ; sinon → « Annuler le paiement »).`
     : '';
+
+  /* Répartition des ventes confirmées par moyen : le moyen précis vient de
+     lastMethod (Airtel vs Moov, carte vs Apple Pay) ; les anciennes ventes
+     sans ce détail tombent dans la famille (Mobile Money). Les marquages
+     manuels, sans preuve d'encaissement, sont comptés à part. */
+  const parMoyen = {};
+  paidOrders.forEach(o=>{
+    const key = o.provider ? (o.lastMethod || o.method || 'autre') : 'manuel';
+    const e = parMoyen[key] || (parMoyen[key] = { n:0, xaf:0, eur:0 });
+    e.n++;
+    if(Number(o.amountXAF) > 0) e.xaf += Number(o.amountXAF);
+    else if(Number(o.amountEur) > 0) e.eur += Number(o.amountEur);
+  });
+  const MOYEN_ORDER = ['airtel','moov','mobile_money','card','applepay','paypal','manuel'];
+  const MOYEN_NOMS = Object.assign({ manuel:'Marqué manuellement (sans preuve)', autre:'Autre' }, METHOD_LABELS);
+  const moyenKeys = MOYEN_ORDER.filter(k=>parMoyen[k])
+    .concat(Object.keys(parMoyen).filter(k=>MOYEN_ORDER.indexOf(k) < 0));
+  const vmBody = document.getElementById('ventesMoyenBody');
+  if(vmBody) vmBody.innerHTML = moyenKeys.length
+    ? moyenKeys.map(k=>{
+        const e = parMoyen[k];
+        const montant = [e.xaf ? formatXaf(e.xaf) : '', e.eur ? formatEur(e.eur) : ''].filter(Boolean).join(' + ') || '—';
+        return `<tr><td>${MOYEN_NOMS[k]||k}</td><td>${e.n}</td><td>${montant}</td></tr>`;
+      }).join('')
+    : '<tr class="empty-row"><td colspan="3">Aucune vente confirmée pour l\'instant.</td></tr>';
 
   renderOrders();
   renderRelances();
