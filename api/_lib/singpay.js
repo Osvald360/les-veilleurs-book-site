@@ -20,14 +20,25 @@ export async function confirmSingpayOrder(order, { host, protocol = 'https', try
     return 'pending';
   }
 
-  const r = await fetch(`https://gateway.singpay.ga/v1/transaction/api/status/${encodeURIComponent(txId)}`, {
-    headers: {
-      'x-client-id': settings.singpayClientId,
-      'x-client-secret': settings.singpayClientSecret,
-      'x-wallet': settings.singpayWallet,
-      Accept: 'application/json',
-    },
-  });
+  // Délai maximal de 8 s : une interrogation qui traîne ne doit pas épuiser
+  // le budget temps de l'appelant (rapprochement, balayage, vérification
+  // navigateur) ; l'échec est traité par l'appelant comme « en attente ».
+  const ctrl = new AbortController();
+  const cut = setTimeout(() => ctrl.abort(), 8000);
+  let r;
+  try {
+    r = await fetch(`https://gateway.singpay.ga/v1/transaction/api/status/${encodeURIComponent(txId)}`, {
+      headers: {
+        'x-client-id': settings.singpayClientId,
+        'x-client-secret': settings.singpayClientSecret,
+        'x-wallet': settings.singpayWallet,
+        Accept: 'application/json',
+      },
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(cut);
+  }
   let body = {};
   try { body = await r.json(); } catch (e) {}
   const tx = (body && body.transaction) || body || {};

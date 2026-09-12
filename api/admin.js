@@ -292,29 +292,37 @@ export default async function handler(req, res) {
         const proto = req.headers['x-forwarded-proto'] || 'https';
         const all = await listOrders(300);
         const pending = all.filter((o) => o && o.status === 'pending');
-        // Lot de 10 interrogé en parallèle : l'interrogation séquentielle
-        // dépassait la durée maximale d'exécution de la fonction.
-        const batch = pending.slice(0, 10);
-        const out = { examinees: batch.length, payees: 0, echouees: 0, inconnues: 0, restantes: Math.max(0, pending.length - batch.length) };
-        await Promise.all(batch.map(async (o) => {
-          try {
-            const verdict = await confirmSingpayOrder(o, { host, protocol: proto, tryReference: true });
-            if (verdict === 'paid') out.payees++;
-            else if (verdict.startsWith('failed:')) {
-              await setOrderStatus(o.id, 'cancelled', 'Rapprochement SingPay : paiement non abouti (' + verdict.slice(7) + ')');
-              out.echouees++;
-            } else out.inconnues++;
-          } catch (e) {
-            out.inconnues++;
-          }
-        }));
+        // Lots de 5 en parallèle, tant qu'il reste du budget temps : la
+        // fonction a 60 s ; on s'arrête à 45 s pour toujours renvoyer un
+        // résultat (le compteur « restantes » invite à relancer) plutôt
+        // que d'expirer sans réponse.
+        const deadline = Date.now() + 45000;
+        const out = { examinees: 0, payees: 0, echouees: 0, inconnues: 0, restantes: 0, montants: 0 };
+        let done = 0;
+        while (done < pending.length && Date.now() < deadline) {
+          const batch = pending.slice(done, done + 5);
+          done += batch.length;
+          out.examinees += batch.length;
+          await Promise.all(batch.map(async (o) => {
+            try {
+              const verdict = await confirmSingpayOrder(o, { host, protocol: proto, tryReference: true });
+              if (verdict === 'paid') out.payees++;
+              else if (verdict.startsWith('failed:')) {
+                await setOrderStatus(o.id, 'cancelled', 'Rapprochement SingPay : paiement non abouti (' + verdict.slice(7) + ')');
+                out.echouees++;
+              } else out.inconnues++;
+            } catch (e) {
+              out.inconnues++;
+            }
+          }));
+        }
+        out.restantes = Math.max(0, pending.length - done);
 
         // Complète aussi le montant des commandes payées par carte qui ne
         // l'ont pas (payées avant la mémorisation des montants) : le montant
         // réellement encaissé est relu chez Stripe par référence de commande.
-        out.montants = 0;
         const settings = await getSettings();
-        if (settings.stripeSecretKey) {
+        if (settings.stripeSecretKey && Date.now() < deadline) {
           const needAmount = all.filter((o) =>
             o && o.status === 'paid' && !o.amountEur && !o.amountXAF &&
             ['card', 'applepay'].includes(o.lastMethod || o.method)
