@@ -893,6 +893,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
             <option value="pending">En attente</option>
             <option value="cancelled">Annulées</option>
           </select>
+          <button class="btn-small" onclick="reconcileOrders()">Rapprocher SingPay</button>
           <button class="btn-small" onclick="exportOrders()">Exporter CSV</button>
         </div>
       </div>
@@ -1607,6 +1608,26 @@ function renderOrders(){
       <td class="order-actions">${act}</td>
     </tr>`;
   }).join('');
+}
+
+/* Rapprochement automatique : le serveur interroge SingPay pour chaque
+   commande en attente et règle son sort (payée, classée sans suite, ou
+   inchangée si SingPay ne la connaît pas). */
+async function reconcileOrders(){
+  if(!confirm("Vérifier auprès de SingPay toutes les commandes en attente ?\n\n· Paiement abouti → marquée payée (e-mail envoyé)\n· Tentative échouée → classée sans suite\n· Inconnue de SingPay → inchangée")) return;
+  const btn = event && event.target; if(btn) { btn.disabled = true; btn.textContent = 'Vérification…'; }
+  try{
+    const r = await adminFetch('reconcile', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body:'{}'
+    });
+    const d = await r.json();
+    alert('Rapprochement terminé :\n\n· ' + (d.payees||0) + ' confirmée(s) payée(s)\n· ' + (d.echouees||0) + ' classée(s) sans suite\n· ' + (d.inconnues||0) + ' inchangée(s)'
+      + (d.restantes ? '\n· ' + d.restantes + ' restante(s) — cliquez à nouveau pour continuer' : ''));
+    refreshAdmin();
+  }catch(e){ alert('Le rapprochement a échoué. Réessayez dans un instant.'); }
+  if(btn){ btn.disabled = false; btn.textContent = 'Rapprocher SingPay'; }
 }
 
 /* Renvoi de l'e-mail de confirmation à une commande payée qui ne l'a pas

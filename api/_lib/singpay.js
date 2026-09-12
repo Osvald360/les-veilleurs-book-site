@@ -8,9 +8,11 @@ import { sendThankYouEmail } from './thankyou.js';
 // Utilisée par /api/singpay-status (le navigateur de l'acheteur) et par le
 // balayage automatique ci-dessous. Retourne 'paid', 'failed:<raison>' ou
 // 'pending'.
-export async function confirmSingpayOrder(order, { host, protocol = 'https' }) {
+export async function confirmSingpayOrder(order, { host, protocol = 'https', tryReference = false }) {
   if (!order || order.status === 'paid') return 'paid';
-  const txId = order.singpayTxId;
+  // Les anciennes commandes n'ont pas d'identifiant de transaction mémorisé ;
+  // l'API SingPay accepte aussi la référence marchande (notre ID de commande).
+  const txId = order.singpayTxId || (tryReference ? order.id : null);
   if (!txId) return 'pending';
 
   const settings = await getSettings();

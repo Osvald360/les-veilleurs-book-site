@@ -17,6 +17,7 @@ import {
 } from './_lib/settings.js';
 import { isAdmin, checkRateLimit, clearRateLimit, passwordAudit } from './_lib/auth.js';
 import { sendThankYouEmail } from './_lib/thankyou.js';
+import { confirmSingpayOrder } from './_lib/singpay.js';
 
 const DEFAULT_TOTAL = 200;
 
@@ -279,6 +280,33 @@ export default async function handler(req, res) {
           else await releaseThankYou(id);
         }
         return res.status(200).json({ ...updated, email });
+      }
+
+      // Rapprochement : interroge SingPay pour chaque commande en attente
+      // et règle son sort. Paiement abouti → payée (e-mail envoyé) ;
+      // tentative échouée → classée sans suite ; inconnue → inchangée.
+      // Par lots de 20 pour tenir dans la durée d'exécution : le compteur
+      // « restantes » invite à relancer.
+      case 'reconcile': {
+        const host = req.headers['x-forwarded-host'] || req.headers.host;
+        const proto = req.headers['x-forwarded-proto'] || 'https';
+        const all = await listOrders(300);
+        const pending = all.filter((o) => o && o.status === 'pending');
+        const batch = pending.slice(0, 20);
+        const out = { examinees: batch.length, payees: 0, echouees: 0, inconnues: 0, restantes: Math.max(0, pending.length - batch.length) };
+        for (const o of batch) {
+          try {
+            const verdict = await confirmSingpayOrder(o, { host, protocol: proto, tryReference: true });
+            if (verdict === 'paid') out.payees++;
+            else if (verdict.startsWith('failed:')) {
+              await setOrderStatus(o.id, 'cancelled', 'Rapprochement SingPay : paiement non abouti (' + verdict.slice(7) + ')');
+              out.echouees++;
+            } else out.inconnues++;
+          } catch (e) {
+            out.inconnues++;
+          }
+        }
+        return res.status(200).json(out);
       }
 
       // Renvoi de l'e-mail de confirmation à une commande payée qui ne l'a
