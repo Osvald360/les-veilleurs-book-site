@@ -453,6 +453,34 @@ input[type="datetime-local"]:focus, input[type="number"]:focus{ outline:none; bo
 .badge.cancelled{ background:rgba(154,161,174,0.14); color:var(--ink-dim); }
 .cell-sub{ display:block; color:var(--ink-dim); font-size:0.76rem; }
 
+/* ---------- Administration sur téléphone ---------- */
+@media (max-width:700px){
+  .admin-dash{ padding:28px 14px 70px; }
+  /* Onglets et boutons d'entête : défilement horizontal plutôt que débordement */
+  .admin-tabs{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .tab-btn{ margin-right:12px; white-space:nowrap; }
+  /* Les tableaux défilent dans leur cadre, jamais la page entière */
+  .admin-table{ display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  /* Le tableau des commandes devient des fiches empilées, lisibles sans défilement */
+  .orders-table thead{ display:none; }
+  .orders-table, .orders-table tbody{ display:block; overflow:visible; }
+  .orders-table tr{ display:block; border:1px solid var(--panel-line); border-radius:3px; background:var(--panel); margin-bottom:12px; padding:12px 14px; }
+  .orders-table td{ display:block; border:none; padding:3px 0; }
+  .orders-table td:empty{ display:none; }
+  .orders-table td[data-label]::before{
+    content:attr(data-label); display:block; font-size:0.64rem; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--ink-dim); margin-bottom:1px;
+  }
+  .orders-table td.order-actions{ display:flex; gap:10px; flex-wrap:wrap; padding-top:10px; }
+  .orders-table .empty-row{ border:none; background:transparent; }
+  /* Boutons assez grands pour le pouce */
+  .row-act{ font-size:0.8rem; padding:10px 16px; }
+  /* Champs à 16px : iOS ne zoome plus automatiquement à la saisie */
+  .field input, .table-tools input, .table-tools select{ font-size:16px; }
+  .table-tools{ width:100%; }
+  .table-tools input{ flex:1; min-width:0; }
+}
+
 /* ---------- TITRE DU LIVRE (hero) ---------- */
 .hero h1.book-title{
   font-family:'Playfair Display',serif; font-weight:700;
@@ -868,7 +896,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
           <button class="btn-small" onclick="exportOrders()">Exporter CSV</button>
         </div>
       </div>
-      <table class="admin-table">
+      <table class="admin-table orders-table">
         <thead><tr><th>Date</th><th>Nom</th><th>Contact</th><th>Adresse</th><th>Moyen</th><th>Statut</th><th>Action</th></tr></thead>
         <tbody id="ordersBody"></tbody>
       </table>
@@ -1564,13 +1592,13 @@ function renderOrders(){
     const txSub = o.providerTxId ? `<span class="cell-sub">${o.providerTxId}</span>`
                 : o.singpayTxId ? `<span class="cell-sub">${o.singpayTxId}</span>` : '';
     return `<tr>
-      <td>${date}</td>
-      <td>${o.firstName||''} ${o.lastName||''}</td>
-      <td>${o.email||''}<span class="cell-sub">${o.phone||''}</span></td>
-      <td>${o.address||''}</td>
-      <td>${methodLabel}${txSub}</td>
-      <td>${badge}</td>
-      <td>${act}</td>
+      <td data-label="Date">${date}</td>
+      <td data-label="Nom">${o.firstName||''} ${o.lastName||''}</td>
+      <td data-label="Contact">${o.email||''}<span class="cell-sub">${o.phone||''}</span></td>
+      <td data-label="Adresse">${o.address||''}</td>
+      <td data-label="Moyen">${methodLabel}${txSub}</td>
+      <td data-label="Statut">${badge}</td>
+      <td class="order-actions">${act}</td>
     </tr>`;
   }).join('');
 }
