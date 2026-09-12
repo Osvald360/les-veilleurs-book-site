@@ -1598,11 +1598,11 @@ function renderOrders(){
 
   body.innerHTML = list.slice(0,100).map(o=>{
     const date = new Date(o.ts || o.createdAt).toLocaleString('fr-FR');
-    /* « Payé ✓ » = encaissement vérifié auprès du fournisseur (identifiant
-       de transaction présent) ; « Payé (manuel) » = marqué à la main, sans
-       preuve d'encaissement — à contrôler contre les relevés. */
+    /* « Payé ✓ » = encaissement confirmé par le fournisseur de paiement
+       (SingPay, Stripe ou PayPal — champ provider, même critère que les
+       recettes) ; « Payé (manuel) » = marqué à la main, sans preuve. */
     const badge = o.status==='paid'
-      ? (o.providerTxId ? '<span class="badge ok">Payé ✓</span>' : '<span class="badge ok" style="opacity:.75">Payé (manuel)</span>')
+      ? (o.provider ? '<span class="badge ok">Payé ✓</span>' : '<span class="badge ok" style="opacity:.75">Payé (manuel)</span>')
       : o.status==='cancelled' ? '<span class="badge cancelled">Annulé</span>'
       : '<span class="badge pending">En attente</span>';
     const act = o.status==='paid'
