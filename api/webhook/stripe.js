@@ -57,7 +57,13 @@ export default async function handler(req, res) {
     if (orderId) {
       const order = await getOrder(orderId);
       if (order && order.status !== 'paid') {
-        await markOrderPaid(orderId, { method: 'card', provider: 'stripe' });
+        // Montant réellement encaissé, tel que Stripe le rapporte (centimes).
+        const cents = event.type === 'checkout.session.completed'
+          ? session.amount_total
+          : (session.amount_received || session.amount);
+        const extra = { method: 'card', provider: 'stripe' };
+        if (Number.isFinite(cents) && cents > 0) extra.amountEur = cents / 100;
+        await markOrderPaid(orderId, extra);
         // E-mail une seule fois, marqué sur la commande pour qu'un
         // marquage manuel ultérieur ne le renvoie pas en double.
         if (order.email && !order.thankYouSent && await claimThankYou(orderId)) {

@@ -308,6 +308,33 @@ export default async function handler(req, res) {
             out.inconnues++;
           }
         }));
+
+        // Complète aussi le montant des commandes payées par carte qui ne
+        // l'ont pas (payées avant la mémorisation des montants) : le montant
+        // réellement encaissé est relu chez Stripe par référence de commande.
+        out.montants = 0;
+        const settings = await getSettings();
+        if (settings.stripeSecretKey) {
+          const needAmount = all.filter((o) =>
+            o && o.status === 'paid' && !o.amountEur && !o.amountXAF &&
+            ['card', 'applepay'].includes(o.lastMethod || o.method)
+          ).slice(0, 10);
+          await Promise.all(needAmount.map(async (o) => {
+            try {
+              const q = encodeURIComponent(`metadata['orderId']:'${o.id}'`);
+              const r = await fetch(`https://api.stripe.com/v1/payment_intents/search?query=${q}`, {
+                headers: { Authorization: `Bearer ${settings.stripeSecretKey}` },
+              });
+              const d = await r.json();
+              const pi = d && d.data && d.data[0];
+              if (pi && pi.status === 'succeeded' && pi.currency === 'eur' && pi.amount_received > 0) {
+                await updateOrder(o.id, { amountEur: pi.amount_received / 100 });
+                out.montants++;
+              }
+            } catch (e) {}
+          }));
+        }
+
         return res.status(200).json(out);
       }
 

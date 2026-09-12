@@ -42,7 +42,12 @@ export default async function handler(req, res) {
     if (status === 'COMPLETED' && custom) {
       const order = await getOrder(custom);
       if (order && order.status !== 'paid') {
-        await markOrderPaid(custom, { method: 'paypal', provider: 'paypal' });
+        // Montant réellement capturé, tel que PayPal le rapporte.
+        const capture = captureData.purchase_units?.[0]?.payments?.captures?.[0];
+        const amountEur = capture && capture.amount ? Number(capture.amount.value) : null;
+        const extra = { method: 'paypal', provider: 'paypal' };
+        if (Number.isFinite(amountEur) && amountEur > 0) extra.amountEur = amountEur;
+        await markOrderPaid(custom, extra);
         // E-mail une seule fois, marqué sur la commande (cohérent avec
         // les webhooks SingPay et Stripe).
         if (order.email && !order.thankYouSent && await claimThankYou(custom)) {
