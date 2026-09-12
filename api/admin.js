@@ -8,7 +8,7 @@
 
 import { store, storageReady, storageHealth } from './_lib/store.js';
 import { saleState } from './launch.js';
-import { listOrders, clearOrders, setOrderStatus, getOrder, updateOrder } from './_lib/orders.js';
+import { listOrders, clearOrders, setOrderStatus, getOrder, updateOrder, claimThankYou, releaseThankYou } from './_lib/orders.js';
 import {
   getPublicSettingsStatus,
   saveSettings,
@@ -266,16 +266,16 @@ export default async function handler(req, res) {
         // exactement comme pour un paiement en ligne. Jamais deux fois
         // pour la même commande.
         let email = null;
-        if (status === 'paid' && sendEmail !== false && updated.email && !(before && before.thankYouSent)) {
+        if (status === 'paid' && sendEmail !== false && updated.email
+            && !(before && before.thankYouSent) && await claimThankYou(id)) {
           const host = req.headers['x-forwarded-host'] || req.headers.host;
           const proto = req.headers['x-forwarded-proto'] || 'https';
           const r = await sendThankYouEmail({
             firstName: updated.firstName || '', email: updated.email, host, protocol: proto,
           });
           email = r;
-          if (r && r.ok) await setOrderStatus(id, 'paid', note || '').then(() => store.set(
-            `order:${id}`, JSON.stringify({ ...updated, thankYouSent: new Date().toISOString() })
-          ));
+          if (r && r.ok) await updateOrder(id, { thankYouSent: new Date().toISOString() });
+          else await releaseThankYou(id);
         }
         return res.status(200).json({ ...updated, email });
       }
@@ -291,6 +291,9 @@ export default async function handler(req, res) {
         if (order.status !== 'paid') return res.status(200).json({ ok: false, reason: 'not_paid' });
         if (!order.email) return res.status(200).json({ ok: false, reason: 'no_email' });
         if (order.thankYouSent) return res.status(200).json({ ok: false, reason: 'already_sent' });
+        if (!(await claimThankYou(id))) {
+          return res.status(200).json({ ok: false, reason: 'already_sent' });
+        }
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         const proto = req.headers['x-forwarded-proto'] || 'https';
         const sent = await sendThankYouEmail({
@@ -298,6 +301,8 @@ export default async function handler(req, res) {
         });
         if (sent && sent.ok) {
           await updateOrder(id, { thankYouSent: new Date().toISOString() });
+        } else {
+          await releaseThankYou(id);
         }
         return res.status(200).json(sent);
       }

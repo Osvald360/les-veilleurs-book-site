@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getOrder, markOrderPaid, updateOrder } from '../_lib/orders.js';
+import { getOrder, markOrderPaid, updateOrder, claimThankYou, releaseThankYou } from '../_lib/orders.js';
 import { sendThankYouEmail } from '../_lib/thankyou.js';
 import { getSettings, getPrice } from '../_lib/settings.js';
 
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
       // E-mail de remerciement (une seule fois) : l'envoi réussi est
       // marqué sur la commande pour qu'un marquage manuel ultérieur
       // depuis le dashboard ne le renvoie pas en double.
-      if (order.email && !order.thankYouSent) {
+      if (order.email && !order.thankYouSent && await claimThankYou(reference)) {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         const protocol = req.headers['x-forwarded-proto'] || 'https';
         try {
@@ -121,8 +121,12 @@ export default async function handler(req, res) {
           });
           if (sent && sent.ok) {
             await updateOrder(reference, { thankYouSent: new Date().toISOString() });
+          } else {
+            await releaseThankYou(reference);
           }
-        } catch (e) {}
+        } catch (e) {
+          await releaseThankYou(reference);
+        }
       }
     }
 

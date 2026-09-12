@@ -1,5 +1,5 @@
 import { getSettings } from './_lib/settings.js';
-import { getOrder, markOrderPaid, updateOrder } from './_lib/orders.js';
+import { getOrder, markOrderPaid, updateOrder, claimThankYou, releaseThankYou } from './_lib/orders.js';
 import { sendThankYouEmail } from './_lib/thankyou.js';
 
 // PayPal redirige ici le navigateur de l'acheteur une fois qu'il a approuvé
@@ -45,10 +45,12 @@ export default async function handler(req, res) {
         await markOrderPaid(custom, { method: 'paypal', provider: 'paypal' });
         // E-mail une seule fois, marqué sur la commande (cohérent avec
         // les webhooks SingPay et Stripe).
-        if (order.email && !order.thankYouSent) {
+        if (order.email && !order.thankYouSent && await claimThankYou(custom)) {
           const sent = await sendThankYouEmail({ firstName: order.firstName, email: order.email, host, protocol });
           if (sent && sent.ok) {
             await updateOrder(custom, { thankYouSent: new Date().toISOString() });
+          } else {
+            await releaseThankYou(custom);
           }
         }
       }

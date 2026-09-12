@@ -31,6 +31,26 @@ export async function updateOrder(id, patch) {
   return writeOrder(id, patch);
 }
 
+// Réserve l'envoi de l'e-mail de confirmation : premier appelant servi.
+// Webhook, vérification navigateur et balayage serveur peuvent confirmer
+// la même commande à quelques secondes d'écart ; sans ce verrou, deux
+// d'entre eux passeraient le test « pas encore envoyé » en même temps et
+// l'acheteur recevrait l'e-mail en double. Le verrou expire de lui-même
+// (10 min) pour qu'un envoi raté puisse être retenté.
+export async function claimThankYou(id) {
+  try {
+    const got = await store.setnx(`thanks:${id}`, Date.now());
+    if (got) await store.expire(`thanks:${id}`, 600);
+    return Boolean(got);
+  } catch (e) {
+    return true; // sans verrou disponible, mieux vaut risquer un doublon qu'aucun e-mail
+  }
+}
+
+export async function releaseThankYou(id) {
+  try { await store.del(`thanks:${id}`); } catch (e) {}
+}
+
 // Marquage manuel depuis le tableau de bord (virement, mobile money encaissé
 // hors ligne, remise en main propre...).
 export async function setOrderStatus(id, status, note = '') {

@@ -1,5 +1,5 @@
 import { store } from './store.js';
-import { getOrder, markOrderPaid, updateOrder, listOrders } from './orders.js';
+import { getOrder, markOrderPaid, updateOrder, listOrders, claimThankYou, releaseThankYou } from './orders.js';
 import { getSettings, getPrice } from './settings.js';
 import { sendThankYouEmail } from './thankyou.js';
 
@@ -53,7 +53,7 @@ export async function confirmSingpayOrder(order, { host, protocol = 'https' }) {
       amountXAF: Number.isFinite(received) && received > 0 ? received : charged,
     });
 
-    if (order.email && !order.thankYouSent) {
+    if (order.email && !order.thankYouSent && await claimThankYou(order.id)) {
       try {
         const sent = await sendThankYouEmail({
           firstName: order.firstName || '',
@@ -63,8 +63,12 @@ export async function confirmSingpayOrder(order, { host, protocol = 'https' }) {
         });
         if (sent && sent.ok) {
           await updateOrder(order.id, { thankYouSent: new Date().toISOString() });
+        } else {
+          await releaseThankYou(order.id);
         }
-      } catch (e) {}
+      } catch (e) {
+        await releaseThankYou(order.id);
+      }
     }
     return 'paid';
   }
@@ -82,9 +86,15 @@ export async function confirmSingpayOrder(order, { host, protocol = 'https' }) {
 export async function sweepPendingSingpay({ host, protocol = 'https' }) {
   try {
     // Verrou d'une minute : un seul balayage à la fois, sans ralentir
-    // les autres visiteurs.
+    // les autres visiteurs. Un verrou plus vieux que 2 minutes est
+    // considéré orphelin (fonction interrompue avant l'expiration) et
+    // repris, pour que le balayage ne s'arrête jamais définitivement.
     const got = await store.setnx('singpaySweepLock', Date.now());
-    if (!got) return;
+    if (!got) {
+      const ts = Number(await store.get('singpaySweepLock'));
+      if (Number.isFinite(ts) && Date.now() - ts < 120000) return;
+      await store.set('singpaySweepLock', Date.now());
+    }
     await store.expire('singpaySweepLock', 60);
 
     const orders = await listOrders(100);

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { getSettings } from '../_lib/settings.js';
-import { markOrderPaid, getOrder, updateOrder } from '../_lib/orders.js';
+import { markOrderPaid, getOrder, updateOrder, claimThankYou, releaseThankYou } from '../_lib/orders.js';
 import { sendThankYouEmail } from '../_lib/thankyou.js';
 
 // Stripe exige le corps brut (non parsé) pour vérifier la signature.
@@ -60,12 +60,14 @@ export default async function handler(req, res) {
         await markOrderPaid(orderId, { method: 'card', provider: 'stripe' });
         // E-mail une seule fois, marqué sur la commande pour qu'un
         // marquage manuel ultérieur ne le renvoie pas en double.
-        if (order.email && !order.thankYouSent) {
+        if (order.email && !order.thankYouSent && await claimThankYou(orderId)) {
           const host = req.headers['x-forwarded-host'] || req.headers.host;
           const protocol = req.headers['x-forwarded-proto'] || 'https';
           const sent = await sendThankYouEmail({ firstName: order.firstName, email: order.email, host, protocol });
           if (sent && sent.ok) {
             await updateOrder(orderId, { thankYouSent: new Date().toISOString() });
+          } else {
+            await releaseThankYou(orderId);
           }
         }
       }
