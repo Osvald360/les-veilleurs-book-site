@@ -1510,12 +1510,16 @@ function renderAdmin(data){
   const paidOrders = orders.filter(o=>o.status==='paid');
   const paid = paidOrders.length;
   const conversion = visits ? ((paid/visits)*100).toFixed(1) : '0.0';
-  /* Recettes réelles, par monnaie, à partir des montants mémorisés sur
-     chaque commande (les commandes payées sans montant mémorisé — d'avant
-     cette fonction — sont comptées à part). */
-  const totalXaf = paidOrders.reduce((s,o)=> s + (Number(o.amountXAF)>0 ? Number(o.amountXAF) : 0), 0);
-  const totalEur = paidOrders.reduce((s,o)=> s + (Number(o.amountEur)>0 ? Number(o.amountEur) : 0), 0);
-  const sansMontant = paidOrders.filter(o=> !(Number(o.amountXAF)>0) && !(Number(o.amountEur)>0)).length;
+  /* Recettes réelles : seules les ventes VÉRIFIÉES comptent — celles
+     confirmées par le fournisseur de paiement (champ provider posé par
+     SingPay, Stripe ou PayPal). Les marquages manuels, sans preuve
+     d'encaissement, sont comptés à part. Net Mobile Money = brut moins la
+     commission SingPay de 2,5 %. */
+  const verifiees = paidOrders.filter(o=>o.provider);
+  const totalXaf = verifiees.reduce((s,o)=> s + (Number(o.amountXAF)>0 ? Number(o.amountXAF) : 0), 0);
+  const totalEur = verifiees.reduce((s,o)=> s + (Number(o.amountEur)>0 ? Number(o.amountEur) : 0), 0);
+  const netXaf = Math.round(totalXaf * 0.975);
+  const manuelles = paid - verifiees.length;
   // Une même personne peut consulter plusieurs moyens de paiement : on compte
   // les acheteurs arrivés à l'étape du paiement, pas le nombre de clics.
   const auPaiement = new Set(txns.map(t => t.orderId).filter(Boolean)).size
@@ -1524,8 +1528,8 @@ function renderAdmin(data){
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-card"><div class="stat-num">${visits}</div><div class="stat-label">Visiteurs</div></div>
     <div class="stat-card"><div class="stat-num">${paid}</div><div class="stat-label">Ventes confirmées</div></div>
-    <div class="stat-card"><div class="stat-num">${formatXaf(totalXaf)}</div><div class="stat-label">Recettes Mobile Money${sansMontant ? ' *' : ''}</div></div>
-    <div class="stat-card"><div class="stat-num">${formatEur(totalEur)}</div><div class="stat-label">Recettes carte / PayPal${sansMontant ? ' *' : ''}</div></div>
+    <div class="stat-card"><div class="stat-num">${formatXaf(totalXaf)}</div><div class="stat-label">Recettes Mobile Money vérifiées</div><div style="font-size:0.78rem;color:var(--gold-soft);margin-top:6px;">net ≈ ${formatXaf(netXaf)} après commission</div></div>
+    <div class="stat-card"><div class="stat-num">${formatEur(totalEur)}</div><div class="stat-label">Recettes carte / PayPal vérifiées</div><div style="font-size:0.78rem;color:var(--ink-dim);margin-top:6px;">avant frais Stripe / PayPal</div></div>
     <div class="stat-card"><div class="stat-num">${stock.remaining !== undefined ? stock.remaining : '—'}</div><div class="stat-label">Exemplaires restants</div></div>
     <div class="stat-card"><div class="stat-num">${orders.length}</div><div class="stat-label">Coordonnées collectées</div></div>
     <div class="stat-card"><div class="stat-num">${orders.filter(o=>o.status==='pending').length}</div><div class="stat-label">En attente de paiement</div></div>
@@ -1533,8 +1537,8 @@ function renderAdmin(data){
     <div class="stat-card"><div class="stat-num">${auPaiement}</div><div class="stat-label">Arrivés au paiement</div></div>
   `;
   const noteMontants = document.getElementById('statNote');
-  if(noteMontants) noteMontants.textContent = sansMontant
-    ? `* ${sansMontant} vente(s) confirmée(s) sans montant mémorisé (payées avant le suivi des montants) : utilisez « Rapprocher SingPay » ou les relevés Stripe/PayPal pour les compléter.`
+  if(noteMontants) noteMontants.textContent = manuelles
+    ? `⚠ ${manuelles} commande(s) « Payé (manuel) » sans preuve d'encaissement, NON comptée(s) dans les recettes : vérifiez-les contre les relevés (relevé OK → « Rapprocher SingPay » posera la preuve ; sinon → « Annuler le paiement »).`
     : '';
 
   renderOrders();
