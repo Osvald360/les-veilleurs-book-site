@@ -366,9 +366,14 @@ export default async function handler(req, res) {
       }
 
       case 'export': {
-        const orders = await listOrders(1000);
+        // Export filtrable par statut (?status=paid|pending|cancelled) :
+        // permet d'extraire, par exemple, uniquement les commandes pay\u00E9es.
+        const status = String((req.query && req.query.status) || '');
+        let orders = await listOrders(1000);
+        if (status) orders = orders.filter((o) => o && o.status === status);
+        const suffix = { paid: '-payees', pending: '-en-attente', cancelled: '-annulees' }[status] || '';
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', 'attachment; filename="commandes-les-veilleurs.csv"');
+        res.setHeader('Content-Disposition', `attachment; filename="commandes-les-veilleurs${suffix}.csv"`);
         return res.status(200).send('\uFEFF' + toCsv(orders));
       }
 

@@ -1694,13 +1694,17 @@ async function setOrder(id, status){
   }catch(e){ alert("La modification n'a pas pu être enregistrée."); }
 }
 
+/* L'export suit le filtre affiché : sélectionner « Payées » puis exporter
+   produit un fichier ne contenant que les commandes payées. */
 async function exportOrders(){
   try{
-    const r = await adminFetch('export');
+    const f = document.getElementById('orderFilter')?.value || '';
+    const r = await adminFetch('export' + (f ? '&status=' + encodeURIComponent(f) : ''));
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'commandes-les-veilleurs.csv';
+    const suffix = { paid:'-payees', pending:'-en-attente', cancelled:'-annulees' }[f] || '';
+    a.href = url; a.download = 'commandes-les-veilleurs' + suffix + '.csv';
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   }catch(e){ alert("L'export n'a pas pu être généré."); }
