@@ -1,15 +1,35 @@
 import { getSettings, getPrice } from './_lib/settings.js';
 import { getOrder, updateOrder } from './_lib/orders.js';
 
+// fetch avec délai maximal : une passerelle qui ne répond pas doit donner
+// un message clair à l'acheteur, pas une expiration silencieuse de la
+// fonction (le visiteur ne voyait alors qu'une erreur générique).
+function fetchT(url, opts, ms = 12000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const { method, orderId } = req.body || {};
   if (!method || !orderId) return res.status(400).json({ error: 'missing_fields' });
 
-  const order = await getOrder(orderId);
-  if (!order) return res.status(404).json({ error: 'order_not_found' });
-
-  const settings = await getSettings();
+  let order, settings;
+  try {
+    order = await getOrder(orderId);
+    if (!order) return res.status(404).json({ error: 'order_not_found' });
+    settings = await getSettings();
+  } catch (e) {
+    // Raté passager du stockage : un second essai le couvre presque toujours.
+    try {
+      order = order || await getOrder(orderId);
+      if (!order) return res.status(404).json({ error: 'order_not_found' });
+      settings = await getSettings();
+    } catch (e2) {
+      return res.status(200).json({ ready: false, error: 'storage_error', detail: 'Stockage momentanément indisponible, réessayez dans un instant.' });
+    }
+  }
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] || 'https';
   const origin = `${protocol}://${host}`;
@@ -47,7 +67,7 @@ export default async function handler(req, res) {
         // (checkout.session.completed ou payment_intent.succeeded).
         'payment_intent_data[metadata][orderId]': orderId,
       });
-      const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      const r = await fetchT('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${settings.stripeSecretKey}`,
@@ -67,7 +87,7 @@ export default async function handler(req, res) {
     if (method === 'paypal') {
       if (!settings.paypalClientId || !settings.paypalClientSecret) return res.status(200).json({ ready: false });
       const base = settings.paypalMode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
-      const tokenRes = await fetch(`${base}/v1/oauth2/token`, {
+      const tokenRes = await fetchT(`${base}/v1/oauth2/token`, {
         method: 'POST',
         headers: {
           Authorization: 'Basic ' + Buffer.from(`${settings.paypalClientId}:${settings.paypalClientSecret}`).toString('base64'),
@@ -85,7 +105,7 @@ export default async function handler(req, res) {
         });
       }
 
-      const orderRes = await fetch(`${base}/v2/checkout/orders`, {
+      const orderRes = await fetchT(`${base}/v2/checkout/orders`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${tokenData.access_token}`,
@@ -124,6 +144,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ ready: false, error: 'phone_required' });
       }
 
+      // Anti double-débit : si un push USSD a déjà été envoyé il y a moins
+      // de 90 s et n'a pas été signalé en échec, on ne renvoie PAS de
+      // second push (un double-clic déclencherait deux demandes de débit).
+      // La vérification /api/singpay-status efface ce marqueur dès qu'un
+      // échec est constaté, pour permettre un nouvel essai immédiat.
+      const lastPush = Date.parse(order.singpayPushAt || '');
+      if (order.singpayTxId && Number.isFinite(lastPush) && Date.now() - lastPush < 90000) {
+        return res.status(200).json({
+          ready: true,
+          push: true,
+          message: 'Une demande de paiement est déjà en cours sur votre téléphone. Composez votre code ' +
+                   (method === 'airtel' ? 'Airtel Money' : 'Moov Money') + ' pour valider.',
+          reference: orderId,
+        });
+      }
+
       // Montant en FCFA (XAF). 19,90 € ≈ 13 000 FCFA — ajustable dans les réglages.
       const amountXAF = price.xaf;
       const endpoint = method === 'airtel'
@@ -142,7 +178,7 @@ export default async function handler(req, res) {
       // Le montant facturé est figé sur la commande AVANT le push : le
       // webhook vérifiera le règlement contre cette valeur, même si le
       // prix affiché change entre le push et la confirmation.
-      await updateOrder(orderId, { amountXAF, provider: 'singpay' });
+      await updateOrder(orderId, { amountXAF, provider: 'singpay', singpayPushAt: new Date().toISOString() });
 
       const body = {
         amount: amountXAF,
@@ -153,7 +189,7 @@ export default async function handler(req, res) {
       };
       if (settings.singpayDisbursement) body.disbursement = settings.singpayDisbursement;
 
-      const r = await fetch(endpoint, {
+      const r = await fetchT(endpoint, {
         method: 'POST',
         headers: {
           'x-client-id': settings.singpayClientId,
@@ -201,6 +237,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'unknown_method' });
   } catch (e) {
     console.error('checkout_exception', method, e && e.message);
-    return res.status(200).json({ ready: false, error: 'exception', detail: 'Erreur interne : ' + ((e && e.message) || 'inconnue') });
+    const detail = e && e.name === 'AbortError'
+      ? 'La passerelle de paiement met trop de temps à répondre. Réessayez dans un instant.'
+      : 'Erreur interne : ' + ((e && e.message) || 'inconnue');
+    return res.status(200).json({ ready: false, error: 'exception', detail });
   }
 }

@@ -11,7 +11,11 @@ export default async function handler(req, res) {
     // La fenêtre de vente et le stock sont vérifiés côté serveur : un
     // onglet resté ouvert après la clôture ou l'épuisement ne peut pas
     // créer de commande.
-    const sale = await saleState();
+    // Un raté passager de la base ne doit pas refuser un acheteur :
+    // second essai immédiat avant d'abandonner.
+    let sale;
+    try { sale = await saleState(); }
+    catch (e) { sale = await saleState(); }
     if (!sale.open) {
       return res.status(403).json({ error: 'sale_closed', status: sale.status });
     }

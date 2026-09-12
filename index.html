@@ -1208,6 +1208,11 @@ async function selectMethod(id, ready){
     document.getElementById('pendingNote').textContent = "Une erreur est survenue, réessaie dans un instant.";
     return;
   }
+  // Verrou anti double-clic : un second tap pendant que le paiement se
+  // lance ne doit pas déclencher une seconde demande (risque de double
+  // débit en mobile money). Le serveur a aussi son propre garde-fou.
+  if(window.__checkoutBusy) return;
+  window.__checkoutBusy = true;
   document.getElementById('pendingNote').textContent = "Redirection vers le paiement…";
   try{
     const r = await fetch('/api/checkout', {
@@ -1237,6 +1242,8 @@ async function selectMethod(id, ready){
     }
   }catch(e){
     document.getElementById('pendingNote').textContent = "Impossible de contacter le serveur de paiement.";
+  }finally{
+    window.__checkoutBusy = false;
   }
 }
 

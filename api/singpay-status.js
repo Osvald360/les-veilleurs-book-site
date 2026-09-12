@@ -1,4 +1,4 @@
-import { getOrder } from './_lib/orders.js';
+import { getOrder, updateOrder } from './_lib/orders.js';
 import { confirmSingpayOrder } from './_lib/singpay.js';
 
 // Vérification active d'un paiement mobile money, appelée par le
@@ -20,6 +20,9 @@ export default async function handler(req, res) {
 
     if (outcome === 'paid') return res.status(200).json({ paid: true });
     if (outcome.startsWith('failed:')) {
+      // Push soldé par un échec : on lève le verrou anti double-push pour
+      // que l'acheteur puisse relancer un paiement immédiatement.
+      try { await updateOrder(order.id, { singpayPushAt: '' }); } catch (e) {}
       return res.status(200).json({ paid: false, failed: true, reason: outcome.slice(7) });
     }
     return res.status(200).json({ paid: false, pending: true });
