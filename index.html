@@ -1966,15 +1966,27 @@ initCountdown();
     setAll('js-s', String(Math.floor(diff%60000/1000)).padStart(2,'0'));
   }
 
+  /* Connexions mobiles lentes (3G/LTE) : la requête est coupée après 12 s
+     pour ne pas rester suspendue, et tant que l'état de la vente n'a jamais
+     été chargé, on retente au bout de 4 s plutôt que d'attendre la
+     resynchronisation de 20 s — sinon la page reste sur « -- ». */
+  let saleRetryTimer = null;
   async function loadSale(){
     try{
-      const d = await (await fetch('/api/launch')).json();
+      const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+      const cut = ctrl ? setTimeout(function(){ ctrl.abort(); }, 12000) : null;
+      const d = await (await fetch('/api/launch', ctrl ? { signal: ctrl.signal } : {})).json();
+      if(cut) clearTimeout(cut);
       if(!d) return;
       skew = d.now - Date.now();
       sale = d;
       if(typeof window.applyPrice === 'function') window.applyPrice(d.price);
       applyState();
-    }catch(e){}
+    }catch(e){
+      if(!sale && !saleRetryTimer){
+        saleRetryTimer = setTimeout(function(){ saleRetryTimer = null; loadSale(); }, 4000);
+      }
+    }
   }
 
   /* Admin : nombre total d'exemplaires */
