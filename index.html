@@ -1572,7 +1572,14 @@ function renderAdmin(data){
      manuels, sans preuve d'encaissement, sont comptés à part. */
   const parMoyen = {};
   paidOrders.forEach(o=>{
-    const key = o.provider ? (o.lastMethod || o.method || 'autre') : 'manuel';
+    /* Le FOURNISSEUR qui a encaissé fait foi, pas le dernier moyen cliqué :
+       un acheteur peut lancer un push Airtel puis cliquer « Carte » avant
+       de valider son code — la vente reste une vente SingPay. */
+    const key = !o.provider ? 'manuel'
+      : o.provider === 'singpay' ? (['airtel','moov'].indexOf(o.lastMethod) >= 0 ? o.lastMethod : 'mobile_money')
+      : o.provider === 'paypal' ? 'paypal'
+      : o.provider === 'stripe' ? (o.lastMethod === 'applepay' ? 'applepay' : 'card')
+      : (o.lastMethod || o.method || 'autre');
     const e = parMoyen[key] || (parMoyen[key] = { n:0, xaf:0, eur:0 });
     e.n++;
     if(Number(o.amountXAF) > 0) e.xaf += Number(o.amountXAF);
@@ -1583,13 +1590,26 @@ function renderAdmin(data){
   const moyenKeys = MOYEN_ORDER.filter(k=>parMoyen[k])
     .concat(Object.keys(parMoyen).filter(k=>MOYEN_ORDER.indexOf(k) < 0));
   const vmBody = document.getElementById('ventesMoyenBody');
-  if(vmBody) vmBody.innerHTML = moyenKeys.length
-    ? moyenKeys.map(k=>{
-        const e = parMoyen[k];
-        const montant = [e.xaf ? formatXaf(e.xaf) : '', e.eur ? formatEur(e.eur) : ''].filter(Boolean).join(' + ') || '—';
-        return `<tr><td>${MOYEN_NOMS[k]||k}</td><td>${e.n}</td><td>${montant}</td></tr>`;
-      }).join('')
-    : '<tr class="empty-row"><td colspan="3">Aucune vente confirmée pour l\'instant.</td></tr>';
+  if(vmBody){
+    let vmHtml = moyenKeys.length
+      ? moyenKeys.map(k=>{
+          const e = parMoyen[k];
+          const montant = [e.xaf ? formatXaf(e.xaf) : '', e.eur ? formatEur(e.eur) : ''].filter(Boolean).join(' + ') || '—';
+          return `<tr><td>${MOYEN_NOMS[k]||k}</td><td>${e.n}</td><td>${montant}</td></tr>`;
+        }).join('')
+      : '<tr class="empty-row"><td colspan="3">Aucune vente confirmée pour l\'instant.</td></tr>';
+    /* Ligne de synthèse SingPay : l'argent généré (brut) et ce qui doit se
+       retrouver dans le portefeuille une fois tous les reversements passés
+       (net, commission SingPay 2,5 % déduite). À comparer au relevé mw4473. */
+    const g = k => parMoyen[k] || { n:0, xaf:0 };
+    const singN   = g('airtel').n   + g('moov').n   + g('mobile_money').n;
+    const singXaf = g('airtel').xaf + g('moov').xaf + g('mobile_money').xaf;
+    if(singN > 0){
+      vmHtml += `<tr style="border-top:2px solid var(--gold);"><td><b>Total SingPay</b></td><td><b>${singN}</b></td>`
+        + `<td><b>${formatXaf(singXaf)}</b> générés<span class="cell-sub">net attendu dans le portefeuille ≈ <b>${formatXaf(Math.round(singXaf*0.975))}</b> après commission 2,5 % (une fois tous les reversements passés)</span></td></tr>`;
+    }
+    vmBody.innerHTML = vmHtml;
+  }
 
   renderOrders();
   renderRelances();
