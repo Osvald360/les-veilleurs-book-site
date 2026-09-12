@@ -1549,7 +1549,7 @@ function renderAdmin(data){
     txnBody.innerHTML = txns.slice(0,25).map(t=>{
       const method = METHODS.find(m=>m.id===t.method);
       const date = new Date(t.ts).toLocaleString('fr-FR');
-      const badge = t.status==='redirigé' ? '<span class="badge ok">Redirigé</span>' : '<span class="badge pending">Tentative</span>';
+      const badge = t.status==='redirigé' ? '<span class="badge pending">Paiement lancé</span>' : '<span class="badge pending">Simple clic</span>';
       return `<tr><td>${date}</td><td>${method?method.label:t.method}</td><td>${badge}</td></tr>`;
     }).join('');
   }
