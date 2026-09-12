@@ -3,6 +3,7 @@ import { store, storageReady } from './_lib/store.js';
 import { listOrders } from './_lib/orders.js';
 import { getSettings, getPrice } from './_lib/settings.js';
 import { sweepPendingSingpay } from './_lib/singpay.js';
+import { sweepPendingStripe } from './_lib/stripesweep.js';
 
 // Endpoint public : état de la vente, compte à rebours et exemplaires restants.
 // Tout est piloté depuis le tableau de bord (onglet Système → Contrôle de la vente).
@@ -85,10 +86,13 @@ export default async function handler(req, res) {
     // secondes (vérifications SingPay + e-mails) et, attendu ici, il faisait
     // expirer la requête — la page restait alors figée sur « -- ».
     try {
-      waitUntil(sweepPendingSingpay({
+      const sweepCtx = {
         host: req.headers['x-forwarded-host'] || req.headers.host,
         protocol: req.headers['x-forwarded-proto'] || 'https',
-      }));
+      };
+      // Mobile money puis cartes, l'un après l'autre : les commandes
+      // restées « en attente » se confirment toutes seules, e-mail compris.
+      waitUntil(sweepPendingSingpay(sweepCtx).then(() => sweepPendingStripe(sweepCtx)));
     } catch (e) {}
     // Cache CDN : le bord Vercel sert cet état pendant 5 s (et jusqu'à 60 s
     // en le rafraîchissant en arrière-plan, 10 min si la fonction est en

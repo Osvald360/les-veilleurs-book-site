@@ -910,7 +910,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
       </div>
       <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Personnes dont <b>aucun</b> paiement n'a abouti. Celles qui ont fini par payer lors d'un autre essai (même e-mail ou même téléphone) sont exclues automatiquement. « Vérifier et exporter » interroge d'abord SingPay <b>et</b> Stripe pour toutes les commandes en attente : la liste exportée ne contient que des personnes dont on est sûr qu'elles n'ont jamais payé.</p>
       <table class="admin-table orders-table">
-        <thead><tr><th>Nom</th><th>Contact</th><th>Essais</th><th>Moyens essayés</th><th>Dernier essai</th><th>Stade</th></tr></thead>
+        <thead><tr><th>Nom</th><th>Contact</th><th>Essais</th><th>Moyens essayés</th><th>Dernier essai</th><th>Stade</th><th>Contacter</th></tr></thead>
         <tbody id="relanceBody"></tbody>
       </table>
       <h3 style="font-size:1rem; margin-bottom:14px; color:var(--gold-soft);">Dernières transactions</h3>
@@ -1718,6 +1718,27 @@ function computeRelances(){
 function relanceMethods(p){
   return Object.keys(p.methods).map(m=>METHOD_LABELS[m]||m).join(', ');
 }
+/* Numéro au format international pour WhatsApp (241 + numéro sans le 0). */
+function waNumber(phone){
+  const local = normPhoneKey(phone);
+  if(!local) return '';
+  return '241' + (local.charAt(0) === '0' ? local.slice(1) : local);
+}
+function relanceMessage(p){
+  return 'Bonjour' + (p.firstName ? ' ' + p.firstName : '') + ', nous avons vu que votre commande du livre '
+    + '« Les Veilleurs et l\'étude des signes » de Mgr Michel Ambouroue n\'a pas pu aboutir. '
+    + 'Vous pouvez finaliser votre achat ici : ' + window.location.origin + ' — et nous sommes là pour vous aider si besoin. Merci !';
+}
+function relanceContactButtons(p){
+  const btns = [];
+  const wa = waNumber(p.phone);
+  if(wa) btns.push('<a class="row-act" target="_blank" rel="noopener" href="https://wa.me/' + wa + '?text=' + encodeURIComponent(relanceMessage(p)) + '">WhatsApp</a>');
+  if(p.phone) btns.push('<a class="row-act" href="tel:' + String(p.phone).replace(/[^0-9+]/g,'') + '">Appeler</a>');
+  if(p.email) btns.push('<a class="row-act" href="mailto:' + encodeURIComponent(p.email)
+    + '?subject=' + encodeURIComponent('Votre commande — Les Veilleurs et l\'étude des signes')
+    + '&body=' + encodeURIComponent(relanceMessage(p)) + '">E-mail</a>');
+  return btns.join('') || '—';
+}
 function renderRelances(){
   const body = document.getElementById('relanceBody');
   if(!body) return;
@@ -1725,7 +1746,7 @@ function renderRelances(){
   const count = document.getElementById('relanceCount');
   if(count) count.textContent = list.length ? '(' + list.length + ')' : '';
   if(list.length===0){
-    body.innerHTML = '<tr class="empty-row"><td colspan="6">Personne à relancer : tous ceux qui ont tenté un paiement ont fini par payer.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="7">Personne à relancer : tous ceux qui ont tenté un paiement ont fini par payer.</td></tr>';
     return;
   }
   body.innerHTML = list.slice(0,200).map(p=>{
@@ -1740,6 +1761,7 @@ function renderRelances(){
       + '<td data-label="Moyens essayés">' + (relanceMethods(p) || '—') + '</td>'
       + '<td data-label="Dernier essai">' + date + '</td>'
       + '<td data-label="Stade">' + stade + '</td>'
+      + '<td data-label="Contacter" class="order-actions">' + relanceContactButtons(p) + '</td>'
       + '</tr>';
   }).join('');
 }
@@ -1771,12 +1793,13 @@ function exportRelances(){
   const list = computeRelances();
   if(list.length===0){ alert('Personne à relancer : tous ceux qui ont tenté un paiement ont fini par payer.'); return; }
   const esc = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
-  const rows = [['Nom','Prénom','E-mail','Téléphone','Essais de paiement','Moyens essayés','Dernier essai','Stade']];
+  const rows = [['Nom','Prénom','E-mail','Téléphone','Essais de paiement','Moyens essayés','Dernier essai','Stade','Lien WhatsApp']];
   list.forEach(p=>rows.push([
     p.lastName, p.firstName, p.email, p.phone, p.attempts,
     relanceMethods(p),
     p.lastTs ? new Date(p.lastTs).toLocaleString('fr-FR') : '',
-    p.attempts > 0 ? 'Paiement tenté sans succès' : 'Formulaire rempli, paiement non tenté'
+    p.attempts > 0 ? 'Paiement tenté sans succès' : 'Formulaire rempli, paiement non tenté',
+    waNumber(p.phone) ? 'https://wa.me/' + waNumber(p.phone) + '?text=' + encodeURIComponent(relanceMessage(p)) : ''
   ]));
   const csv = '﻿' + rows.map(r=>r.map(esc).join(';')).join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
