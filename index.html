@@ -1589,6 +1589,9 @@ function renderOrders(){
         + `<button class="row-act" onclick="setOrder('${o.id}','pending')">Annuler le paiement</button>`
       : `<button class="row-act" onclick="setOrder('${o.id}','paid')">Marquer payé</button>`;
     const methodLabel = METHOD_LABELS[o.lastMethod] || METHOD_LABELS[o.method] || (o.lastMethod || o.method || '—');
+    const amount = o.amountXAF ? formatXaf(o.amountXAF)
+                 : o.amountEur ? formatEur(o.amountEur) : '';
+    const methodCell = amount ? `${methodLabel} · ${amount}` : methodLabel;
     const txSub = o.providerTxId ? `<span class="cell-sub">${o.providerTxId}</span>`
                 : o.singpayTxId ? `<span class="cell-sub">${o.singpayTxId}</span>` : '';
     return `<tr>
@@ -1596,7 +1599,7 @@ function renderOrders(){
       <td data-label="Nom">${o.firstName||''} ${o.lastName||''}</td>
       <td data-label="Contact">${o.email||''}<span class="cell-sub">${o.phone||''}</span></td>
       <td data-label="Adresse">${o.address||''}</td>
-      <td data-label="Moyen">${methodLabel}${txSub}</td>
+      <td data-label="Moyen">${methodCell}${txSub}</td>
       <td data-label="Statut">${badge}</td>
       <td class="order-actions">${act}</td>
     </tr>`;

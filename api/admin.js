@@ -160,7 +160,7 @@ async function buildDiagnostics() {
 }
 
 function toCsv(orders) {
-  const head = ['Date', 'ID', 'Prénom', 'Nom', 'E-mail', 'Téléphone', 'Adresse', 'Moyen', 'Statut', 'Payé le'];
+  const head = ['Date', 'ID', 'Prénom', 'Nom', 'E-mail', 'Téléphone', 'Adresse', 'Moyen', 'Montant', 'Statut', 'Payé le'];
   const esc = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const lines = [head.map(esc).join(',')];
   for (const o of orders) {
@@ -174,6 +174,7 @@ function toCsv(orders) {
         o.phone || '',
         o.address || '',
         o.lastMethod || o.method || '',
+        o.amountXAF ? `${o.amountXAF} FCFA` : o.amountEur ? `${o.amountEur} EUR` : '',
         o.status || '',
         o.paidAt || '',
       ]
