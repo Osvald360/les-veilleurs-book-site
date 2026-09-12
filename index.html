@@ -1587,7 +1587,10 @@ function renderOrders(){
     const act = o.status==='paid'
       ? (o.thankYouSent ? '' : `<button class="row-act" onclick="sendOrderEmail('${o.id}')">Envoyer l'e-mail</button>`)
         + `<button class="row-act" onclick="setOrder('${o.id}','pending')">Annuler le paiement</button>`
-      : `<button class="row-act" onclick="setOrder('${o.id}','paid')">Marquer payé</button>`;
+      : o.status==='cancelled'
+        ? `<button class="row-act" onclick="setOrder('${o.id}','pending')">Repasser en attente</button>`
+        : `<button class="row-act" onclick="setOrder('${o.id}','paid')">Marquer payé</button>`
+          + `<button class="row-act" onclick="setOrder('${o.id}','cancelled')">Classer sans suite</button>`;
     const methodLabel = METHOD_LABELS[o.lastMethod] || METHOD_LABELS[o.method] || (o.lastMethod || o.method || '—');
     const amount = o.amountXAF ? formatXaf(o.amountXAF)
                  : o.amountEur ? formatEur(o.amountEur) : '';
@@ -1629,6 +1632,8 @@ async function setOrder(id, status){
   if(status === 'paid'){
     if(!confirm('Marquer cette commande comme PAYÉE ?\n\nL\'e-mail de confirmation partira automatiquement (une seule fois par commande).')) return;
     sendEmail = true; // même comportement qu'un paiement en ligne
+  } else if(status === 'cancelled'){
+    if(!confirm('Classer cette commande sans suite ?\n\n(Abandon ou tentative de paiement échouée — elle ne comptera ni dans le stock ni dans les recettes.)')) return;
   } else {
     if(!confirm('Repasser cette commande en attente ?')) return;
   }
