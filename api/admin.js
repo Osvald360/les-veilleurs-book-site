@@ -8,7 +8,7 @@
 
 import { store, storageReady, storageHealth } from './_lib/store.js';
 import { saleState } from './launch.js';
-import { listOrders, clearOrders, setOrderStatus, getOrder, updateOrder, claimThankYou, releaseThankYou } from './_lib/orders.js';
+import { listOrders, clearOrders, setOrderStatus, getOrder, updateOrder, markOrderPaid, claimThankYou, releaseThankYou } from './_lib/orders.js';
 import {
   getPublicSettingsStatus,
   saveSettings,
@@ -322,6 +322,42 @@ export default async function handler(req, res) {
         // l'ont pas (payées avant la mémorisation des montants) : le montant
         // réellement encaissé est relu chez Stripe par référence de commande.
         const settings = await getSettings();
+
+        // Vérifie aussi chez Stripe les commandes CARTE restées « en
+        // attente » : si le webhook a été manqué, le paiement encaissé est
+        // retrouvé par référence de commande et la commande est confirmée
+        // (avec e-mail, une seule fois). Indispensable pour que la liste
+        // « À relancer » ne contienne jamais quelqu'un qui a payé.
+        out.cartes = 0;
+        if (settings.stripeSecretKey && Date.now() < deadline) {
+          const cardPending = all.filter((o) =>
+            o && o.status === 'pending' &&
+            ['card', 'applepay'].includes(o.lastMethod || o.method)
+          ).slice(0, 10);
+          await Promise.all(cardPending.map(async (o) => {
+            try {
+              const q = encodeURIComponent(`metadata['orderId']:'${o.id}'`);
+              const r = await fetch(`https://api.stripe.com/v1/payment_intents/search?query=${q}`, {
+                headers: { Authorization: `Bearer ${settings.stripeSecretKey}` },
+              });
+              const d = await r.json();
+              const pi = d && d.data && d.data.find((x) => x && x.status === 'succeeded');
+              if (pi) {
+                const extra = { method: o.lastMethod || 'card', provider: 'stripe', providerTxId: pi.id };
+                if (pi.currency === 'eur' && pi.amount_received > 0) extra.amountEur = pi.amount_received / 100;
+                await markOrderPaid(o.id, extra);
+                out.cartes++;
+                const fresh = await getOrder(o.id);
+                if (fresh && fresh.email && !fresh.thankYouSent && await claimThankYou(o.id)) {
+                  const sent = await sendThankYouEmail({ firstName: fresh.firstName || '', email: fresh.email, host, protocol: proto });
+                  if (sent && sent.ok) await updateOrder(o.id, { thankYouSent: new Date().toISOString() });
+                  else await releaseThankYou(o.id);
+                }
+              }
+            } catch (e) {}
+          }));
+        }
+
         if (settings.stripeSecretKey && Date.now() < deadline) {
           const needAmount = all.filter((o) =>
             o && o.status === 'paid' && !o.amountEur && !o.amountXAF &&

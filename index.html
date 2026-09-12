@@ -905,10 +905,10 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
       <div class="table-head-row" style="margin-top:30px;">
         <h3 style="font-size:1rem; color:var(--gold-soft);">À relancer <span id="relanceCount" style="color:var(--ink-dim);font-weight:normal;"></span></h3>
         <div class="table-tools">
-          <button class="btn-small" onclick="exportRelances()">Exporter CSV</button>
+          <button class="btn-small" onclick="verifyAndExportRelances(this)">Vérifier et exporter</button>
         </div>
       </div>
-      <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Personnes dont <b>aucun</b> paiement n'a abouti. Celles qui ont fini par payer lors d'un autre essai (même e-mail ou même téléphone) sont exclues automatiquement.</p>
+      <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Personnes dont <b>aucun</b> paiement n'a abouti. Celles qui ont fini par payer lors d'un autre essai (même e-mail ou même téléphone) sont exclues automatiquement. « Vérifier et exporter » interroge d'abord SingPay <b>et</b> Stripe pour toutes les commandes en attente : la liste exportée ne contient que des personnes dont on est sûr qu'elles n'ont jamais payé.</p>
       <table class="admin-table orders-table">
         <thead><tr><th>Nom</th><th>Contact</th><th>Essais</th><th>Moyens essayés</th><th>Dernier essai</th><th>Stade</th></tr></thead>
         <tbody id="relanceBody"></tbody>
@@ -1743,9 +1743,33 @@ function renderRelances(){
       + '</tr>';
   }).join('');
 }
+/* Export « sûr » : avant d'exporter, TOUTES les commandes en attente sont
+   vérifiées auprès de SingPay et Stripe (mêmes vérifications que le bouton
+   « Rapprocher SingPay », relancées tant qu'il en reste), puis les données
+   sont rechargées. Quelqu'un dont le paiement a en réalité abouti est ainsi
+   confirmé payé — et sort de la liste — avant la relance. */
+async function verifyAndExportRelances(btn){
+  if(btn){ btn.disabled = true; btn.textContent = 'Vérification…'; }
+  try{
+    for(let i = 0; i < 6; i++){
+      const r = await adminFetch('reconcile', {
+        method:'POST', headers:{ 'Content-Type':'application/json' }, body:'{}'
+      });
+      const d = await r.json();
+      if(!d || !d.restantes) break;
+      if(btn) btn.textContent = 'Vérification… (' + d.restantes + ' restantes)';
+    }
+    await refreshAdmin();
+    exportRelances();
+  }catch(e){
+    alert("La vérification n'a pas pu aller au bout. La liste exportée pourrait contenir quelqu'un qui a payé : réessayez, ou lancez « Rapprocher SingPay » avant d'exporter.");
+  }
+  if(btn){ btn.disabled = false; btn.textContent = 'Vérifier et exporter'; }
+}
+
 function exportRelances(){
   const list = computeRelances();
-  if(list.length===0){ alert('Personne à relancer pour l\'instant.'); return; }
+  if(list.length===0){ alert('Personne à relancer : tous ceux qui ont tenté un paiement ont fini par payer.'); return; }
   const esc = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
   const rows = [['Nom','Prénom','E-mail','Téléphone','Essais de paiement','Moyens essayés','Dernier essai','Stade']];
   list.forEach(p=>rows.push([
@@ -1776,7 +1800,9 @@ async function reconcileOrders(){
       body:'{}'
     });
     const d = await r.json();
-    alert('Rapprochement terminé :\n\n· ' + (d.payees||0) + ' confirmée(s) payée(s)\n· ' + (d.echouees||0) + ' classée(s) sans suite\n· ' + (d.inconnues||0) + ' inchangée(s)'
+    alert('Rapprochement terminé :\n\n· ' + (d.payees||0) + ' confirmée(s) payée(s) (SingPay)'
+      + (d.cartes ? '\n· ' + d.cartes + ' paiement(s) carte retrouvé(s) chez Stripe' : '')
+      + '\n· ' + (d.echouees||0) + ' classée(s) sans suite\n· ' + (d.inconnues||0) + ' inchangée(s)'
       + (d.restantes ? '\n· ' + d.restantes + ' restante(s) — cliquez à nouveau pour continuer' : ''));
     refreshAdmin();
   }catch(e){ alert('Le rapprochement a échoué. Réessayez dans un instant.'); }
