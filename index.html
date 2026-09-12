@@ -869,7 +869,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
         </div>
       </div>
       <table class="admin-table">
-        <thead><tr><th>Date</th><th>Nom</th><th>Contact</th><th>Adresse</th><th>Statut</th><th>Action</th></tr></thead>
+        <thead><tr><th>Date</th><th>Nom</th><th>Contact</th><th>Adresse</th><th>Moyen</th><th>Statut</th><th>Action</th></tr></thead>
         <tbody id="ordersBody"></tbody>
       </table>
       <h3 style="font-size:1rem; margin-bottom:14px; color:var(--gold-soft);">Dernières transactions</h3>
@@ -1540,9 +1540,16 @@ function renderOrders(){
   });
 
   if(list.length===0){
-    body.innerHTML = `<tr class="empty-row"><td colspan="6">${orders.length ? 'Aucune commande ne correspond.' : "Aucune commande pour l'instant."}</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">${orders.length ? 'Aucune commande ne correspond.' : "Aucune commande pour l'instant."}</td></tr>`;
     return;
   }
+
+  /* Libellé du moyen de paiement : le moyen tenté (lastMethod, posé au clic)
+     est plus précis que la famille enregistrée au paiement (method). */
+  const METHOD_LABELS = {
+    airtel:'Airtel Money', moov:'Moov Money', card:'Carte bancaire',
+    applepay:'Apple Pay', paypal:'PayPal', mobile_money:'Mobile Money'
+  };
 
   body.innerHTML = list.slice(0,100).map(o=>{
     const date = new Date(o.ts || o.createdAt).toLocaleString('fr-FR');
@@ -1553,11 +1560,15 @@ function renderOrders(){
       ? (o.thankYouSent ? '' : `<button class="row-act" onclick="sendOrderEmail('${o.id}')">Envoyer l'e-mail</button>`)
         + `<button class="row-act" onclick="setOrder('${o.id}','pending')">Annuler le paiement</button>`
       : `<button class="row-act" onclick="setOrder('${o.id}','paid')">Marquer payé</button>`;
+    const methodLabel = METHOD_LABELS[o.lastMethod] || METHOD_LABELS[o.method] || (o.lastMethod || o.method || '—');
+    const txSub = o.providerTxId ? `<span class="cell-sub">${o.providerTxId}</span>`
+                : o.singpayTxId ? `<span class="cell-sub">${o.singpayTxId}</span>` : '';
     return `<tr>
       <td>${date}</td>
       <td>${o.firstName||''} ${o.lastName||''}</td>
       <td>${o.email||''}<span class="cell-sub">${o.phone||''}</span></td>
       <td>${o.address||''}</td>
+      <td>${methodLabel}${txSub}</td>
       <td>${badge}</td>
       <td>${act}</td>
     </tr>`;

@@ -9,6 +9,12 @@ export default async function handler(req, res) {
   const order = await getOrder(orderId);
   if (!order) return res.status(404).json({ error: 'order_not_found' });
 
+  // Le moyen tenté est mémorisé sur la commande : le tableau de bord peut
+  // ainsi identifier chaque paiement, y compris resté en attente.
+  if (['card', 'applepay', 'paypal', 'airtel', 'moov'].includes(method)) {
+    try { await updateOrder(orderId, { lastMethod: method }); } catch (e) {}
+  }
+
   const settings = await getSettings();
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] || 'https';

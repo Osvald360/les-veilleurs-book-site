@@ -173,7 +173,7 @@ function toCsv(orders) {
         o.email || '',
         o.phone || '',
         o.address || '',
-        o.method || '',
+        o.lastMethod || o.method || '',
         o.status || '',
         o.paidAt || '',
       ]
