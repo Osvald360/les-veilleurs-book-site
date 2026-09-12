@@ -902,6 +902,17 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
         <thead><tr><th>Date</th><th>Nom</th><th>Contact</th><th>Adresse</th><th>Moyen</th><th>Statut</th><th>Action</th></tr></thead>
         <tbody id="ordersBody"></tbody>
       </table>
+      <div class="table-head-row" style="margin-top:30px;">
+        <h3 style="font-size:1rem; color:var(--gold-soft);">À relancer <span id="relanceCount" style="color:var(--ink-dim);font-weight:normal;"></span></h3>
+        <div class="table-tools">
+          <button class="btn-small" onclick="exportRelances()">Exporter CSV</button>
+        </div>
+      </div>
+      <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Personnes dont <b>aucun</b> paiement n'a abouti. Celles qui ont fini par payer lors d'un autre essai (même e-mail ou même téléphone) sont exclues automatiquement.</p>
+      <table class="admin-table orders-table">
+        <thead><tr><th>Nom</th><th>Contact</th><th>Essais</th><th>Moyens essayés</th><th>Dernier essai</th><th>Stade</th></tr></thead>
+        <tbody id="relanceBody"></tbody>
+      </table>
       <h3 style="font-size:1rem; margin-bottom:14px; color:var(--gold-soft);">Dernières transactions</h3>
       <table class="admin-table">
         <thead><tr><th>Horodatage</th><th>Moyen</th><th>Statut</th></tr></thead>
@@ -1550,6 +1561,7 @@ function renderAdmin(data){
     : '';
 
   renderOrders();
+  renderRelances();
 
   fetch('/api/payment-status').then(r=>r.json()).then(payStatus=>{
     const counts = {};
@@ -1579,6 +1591,14 @@ function renderAdmin(data){
   }
 }
 
+/* Libellé du moyen de paiement : le moyen tenté (lastMethod, posé au clic)
+   est plus précis que la famille enregistrée au paiement (method).
+   Partagé entre le tableau des commandes et la liste « À relancer ». */
+const METHOD_LABELS = {
+  airtel:'Airtel Money', moov:'Moov Money', card:'Carte bancaire',
+  applepay:'Apple Pay', paypal:'PayPal', mobile_money:'Mobile Money'
+};
+
 /* ---------- Commandes : recherche, filtre, actions ---------- */
 function renderOrders(){
   const orders = adminData.orders || [];
@@ -1596,13 +1616,6 @@ function renderOrders(){
     body.innerHTML = `<tr class="empty-row"><td colspan="7">${orders.length ? 'Aucune commande ne correspond.' : "Aucune commande pour l'instant."}</td></tr>`;
     return;
   }
-
-  /* Libellé du moyen de paiement : le moyen tenté (lastMethod, posé au clic)
-     est plus précis que la famille enregistrée au paiement (method). */
-  const METHOD_LABELS = {
-    airtel:'Airtel Money', moov:'Moov Money', card:'Carte bancaire',
-    applepay:'Apple Pay', paypal:'PayPal', mobile_money:'Mobile Money'
-  };
 
   body.innerHTML = list.slice(0,100).map(o=>{
     const date = new Date(o.ts || o.createdAt).toLocaleString('fr-FR');
@@ -1636,6 +1649,118 @@ function renderOrders(){
       <td class="order-actions">${act}</td>
     </tr>`;
   }).join('');
+}
+
+/* ---------- À relancer : personnes dont aucun paiement n'a abouti ----------
+   Regroupement par personne (e-mail, sinon téléphone). Quiconque possède au
+   moins une commande payée — même issue d'un autre essai — est exclu :
+   plusieurs tentatives dont une réussie ne comptent pas. Restent les
+   personnes à recontacter, avec le nombre d'essais et les moyens tentés. */
+function normPhoneKey(p){
+  let d = String(p||'').replace(/\D/g,'');
+  if(d.indexOf('00241')===0) d = d.slice(5);
+  else if(d.indexOf('241')===0 && d.length > 9) d = d.slice(3);
+  if(d.length === 8) d = '0' + d;
+  return d;
+}
+function computeRelances(){
+  const orders = adminData.orders || [];
+  // Une même personne peut apparaître sous plusieurs identifiants (une
+  // commande avec e-mail seul, une autre avec téléphone seul). L'e-mail et
+  // le téléphone d'une même commande sont donc reliés entre eux
+  // (union-find) : si l'un de ses essais a abouti, tous ses identifiants
+  // sont couverts et elle n'est pas relancée à tort.
+  const parent = {};
+  const add = k => { if(!(k in parent)) parent[k] = k; return k; };
+  const find = k => { add(k); while(parent[k] !== k){ parent[k] = parent[parent[k]]; k = parent[k]; } return k; };
+  const union = (a,b) => { parent[find(a)] = find(b); };
+  const keysOf = o => {
+    const ks = [];
+    const e = (o.email||'').toLowerCase().trim(); if(e) ks.push('e:'+e);
+    const p = normPhoneKey(o.phone); if(p) ks.push('p:'+p);
+    if(!ks.length) ks.push('o:'+o.id);
+    return ks;
+  };
+  orders.forEach(o=>{
+    const ks = keysOf(o);
+    for(let i=1;i<ks.length;i++) union(ks[0], ks[i]);
+    add(ks[0]);
+  });
+  const paidRoots = {};
+  orders.forEach(o=>{ if(o.status === 'paid') paidRoots[find(keysOf(o)[0])] = true; });
+  const persons = {};
+  orders.forEach(o=>{
+    if(o.status === 'paid') return;
+    const key = find(keysOf(o)[0]);
+    if(paidRoots[key]) return; // a fini par payer (sous un de ses identifiants)
+    const entry = persons[key] || (persons[key] = {
+      firstName:'', lastName:'', email:'', phone:'',
+      orders:0, attempts:0, methods:{}, lastTs:0
+    });
+    entry.orders++;
+    const m = o.lastMethod || o.method;
+    if(m || o.singpayTxId){
+      entry.attempts++;
+      if(m) entry.methods[m] = true;
+    }
+    const t = Date.parse(o.ts || o.createdAt || '') || 0;
+    if(t >= entry.lastTs){
+      entry.lastTs = t;
+      entry.firstName = o.firstName || entry.firstName;
+      entry.lastName  = o.lastName  || entry.lastName;
+      entry.email     = o.email     || entry.email;
+      entry.phone     = o.phone     || entry.phone;
+    }
+  });
+  return Object.keys(persons).map(k=>persons[k])
+    .sort((a,b)=> (b.attempts - a.attempts) || (b.lastTs - a.lastTs));
+}
+function relanceMethods(p){
+  return Object.keys(p.methods).map(m=>METHOD_LABELS[m]||m).join(', ');
+}
+function renderRelances(){
+  const body = document.getElementById('relanceBody');
+  if(!body) return;
+  const list = computeRelances();
+  const count = document.getElementById('relanceCount');
+  if(count) count.textContent = list.length ? '(' + list.length + ')' : '';
+  if(list.length===0){
+    body.innerHTML = '<tr class="empty-row"><td colspan="6">Personne à relancer : tous ceux qui ont tenté un paiement ont fini par payer.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.slice(0,200).map(p=>{
+    const date = p.lastTs ? new Date(p.lastTs).toLocaleString('fr-FR') : '—';
+    const stade = p.attempts > 0
+      ? '<span class="badge pending">Paiement tenté' + (p.attempts>1 ? ' '+p.attempts+'×' : '') + '</span>'
+      : '<span class="badge cancelled">Formulaire seulement</span>';
+    return '<tr>'
+      + '<td data-label="Nom">' + (p.firstName||'') + ' ' + (p.lastName||'') + '</td>'
+      + '<td data-label="Contact">' + (p.email||'') + '<span class="cell-sub">' + (p.phone||'') + '</span></td>'
+      + '<td data-label="Essais">' + p.attempts + '</td>'
+      + '<td data-label="Moyens essayés">' + (relanceMethods(p) || '—') + '</td>'
+      + '<td data-label="Dernier essai">' + date + '</td>'
+      + '<td data-label="Stade">' + stade + '</td>'
+      + '</tr>';
+  }).join('');
+}
+function exportRelances(){
+  const list = computeRelances();
+  if(list.length===0){ alert('Personne à relancer pour l\'instant.'); return; }
+  const esc = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
+  const rows = [['Nom','Prénom','E-mail','Téléphone','Essais de paiement','Moyens essayés','Dernier essai','Stade']];
+  list.forEach(p=>rows.push([
+    p.lastName, p.firstName, p.email, p.phone, p.attempts,
+    relanceMethods(p),
+    p.lastTs ? new Date(p.lastTs).toLocaleString('fr-FR') : '',
+    p.attempts > 0 ? 'Paiement tenté sans succès' : 'Formulaire rempli, paiement non tenté'
+  ]));
+  const csv = '﻿' + rows.map(r=>r.map(esc).join(';')).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'clients-a-relancer.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /* Rapprochement automatique : le serveur interroge SingPay pour chaque
