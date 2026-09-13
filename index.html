@@ -877,6 +877,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
     </div>
 
     <div class="sys-banner" id="sysBanner" hidden></div>
+    <div id="adminLoadErr" hidden style="border:1px solid #b0563a; background:rgba(176,86,58,0.12); color:#e0865f; padding:12px 16px; border-radius:8px; margin-bottom:20px; font-size:0.88rem;"></div>
 
     <div id="tabStats">
       <div class="stat-grid" id="statGrid"></div>
@@ -1389,13 +1390,29 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Enter' && document.getElementById('adminGate').style.display==='flex'){ checkPassword(); }
 });
 
+/* Un échec de chargement doit se VOIR : sans ça, le tableau de bord
+   affiche des tableaux vides et on croit les données perdues alors
+   qu'elles sont intactes — seule la requête a échoué. */
 async function refreshAdmin(){
+  const errEl = document.getElementById('adminLoadErr');
   try{
     const r = await adminFetch('stats');
     const data = await r.json();
+    if(data && data.error === 'unauthorized'){
+      if(errEl){ errEl.textContent = 'Session expirée : fermez le tableau de bord et reconnectez-vous.'; errEl.hidden = false; }
+      return;
+    }
+    if(data && data.error){ throw new Error(data.error); }
     adminData = data;
     renderAdmin(data);
-  }catch(e){}
+    if(errEl) errEl.hidden = true;
+  }catch(e){
+    if(errEl){
+      errEl.textContent = 'Impossible de charger les données (' + ((e && e.message) || 'erreur réseau') + '). '
+        + 'Rien n\'est perdu : les commandes sont dans la base, seule cette requête a échoué. Appuyez sur « Actualiser » pour réessayer.';
+      errEl.hidden = false;
+    }
+  }
 }
 
 /* ---------- Diagnostic système ---------- */

@@ -65,8 +65,15 @@ export async function listOrders(limit = 200) {
   if (ids.length === 0) return [];
   // Un seul aller-retour Redis (MGET) au lieu d'une requête par commande :
   // cette liste est relue à chaque visite (comptage des ventes), sa latence
-  // conditionne le temps de réponse de la page publique.
-  const raws = (await store.mget(ids.map((id) => `order:${id}`))) || [];
+  // conditionne le temps de réponse de la page publique. Si le MGET groupé
+  // échoue, on retombe sur une lecture commande par commande plutôt que de
+  // renvoyer une liste vide (le tableau de bord paraîtrait effacé).
+  let raws;
+  try {
+    raws = (await store.mget(ids.map((id) => `order:${id}`))) || [];
+  } catch (e) {
+    raws = await Promise.all(ids.map((id) => store.get(`order:${id}`).catch(() => null)));
+  }
   return raws
     .map((raw) => {
       if (!raw) return null;

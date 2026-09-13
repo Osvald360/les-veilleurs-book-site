@@ -226,7 +226,14 @@ export default async function handler(req, res) {
         }
         const visits = (await store.get('visits')) || 0;
         const rawTxns = (await store.lrange('transactions', 0, 199)) || [];
-        const transactions = rawTxns.map((t) => (typeof t === 'string' ? JSON.parse(t) : t));
+        // Une entrée illisible ne doit pas faire tomber tout le tableau
+        // de bord : elle est simplement ignorée.
+        const transactions = rawTxns
+          .map((t) => {
+            if (typeof t !== 'string') return t;
+            try { return JSON.parse(t); } catch (e) { return null; }
+          })
+          .filter(Boolean);
         const orders = await listOrders(300);
         const total = await readStockTotal();
         const sold = orders.filter((o) => o && o.status === 'paid').length;
