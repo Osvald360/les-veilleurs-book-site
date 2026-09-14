@@ -952,6 +952,23 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
         </div>
         <p class="pay-save-note" id="launchNote"></p>
       </div>
+
+      <div class="pay-group" style="margin-top:22px;">
+        <h3>Reverser l'argent SingPay</h3>
+        <p class="pay-help">Transfère une somme du portefeuille SingPay vers un numéro Mobile Money (le vôtre). <b>Faites d'abord un essai avec un petit montant</b> (ex. 1 000 FCFA) : s'il arrive sur le téléphone, envoyez le reste. Si SingPay refuse (GoLive non finalisé, transferts non activés sur le compte), son message exact s'affichera ci-dessous — dans ce cas il faudra passer par leur support.</p>
+        <div class="field"><label>Montant (FCFA)</label><input type="number" id="tr_amount" min="100" placeholder="1000"></div>
+        <div class="field"><label>Numéro Mobile Money destinataire</label><input type="text" id="tr_msisdn" placeholder="074643838"></div>
+        <div class="field"><label>Opérateur du numéro</label>
+          <select id="tr_operator">
+            <option value="airtel">Airtel Money</option>
+            <option value="moov">Moov Money</option>
+          </select>
+        </div>
+        <div class="sale-actions">
+          <button class="btn-small" type="button" onclick="singpayTransfer(this)">Envoyer le transfert</button>
+        </div>
+        <p class="pay-save-note" id="trNote"></p>
+      </div>
     </div>
 
     <div id="tabPay" style="display:none;">
@@ -1451,6 +1468,38 @@ async function loadSystem(){
         : "La fenêtre de 24 h n'a pas encore démarré : elle se déclenchera à la première visite.";
     }
   }catch(e){}
+}
+
+/* ---------- Reversement SingPay (portefeuille → Mobile Money) ---------- */
+async function singpayTransfer(btn){
+  const amount = parseInt(document.getElementById('tr_amount').value, 10);
+  const msisdn = (document.getElementById('tr_msisdn').value || '').trim();
+  const operator = document.getElementById('tr_operator').value;
+  const note = document.getElementById('trNote');
+  if(!(amount >= 100)){ note.textContent = 'Indiquez un montant (minimum 100 FCFA).'; return; }
+  if(!msisdn){ note.textContent = 'Indiquez le numéro Mobile Money destinataire.'; return; }
+  if(!confirm('Envoyer ' + amount.toLocaleString('fr-FR') + ' FCFA du portefeuille SingPay vers le ' + msisdn + ' (' + (operator==='moov'?'Moov':'Airtel') + ') ?\n\nCette action transfère de l\'argent réel.')) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'Transfert…'; }
+  note.textContent = 'Envoi de la demande à SingPay…';
+  try{
+    const r = await adminFetch('singpay-transfer', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ amount, msisdn, operator })
+    });
+    const d = await r.json();
+    if(d && d.ok){
+      note.textContent = '✓ Demande acceptée par SingPay (référence ' + (d.reference || '—') + '). Vérifiez la réception sur le téléphone d\'ici quelques minutes, puis le relevé du portefeuille.';
+    } else {
+      const raw = d && d.response ? JSON.stringify(d.response) : '';
+      note.textContent = '✗ SingPay a refusé (HTTP ' + (d && d.http || '?') + ') : '
+        + ((d && d.detail) || (d && d.response && (d.response.message || d.response.error)) || 'raison inconnue')
+        + (raw && raw.length < 220 ? ' — réponse : ' + raw : '');
+    }
+  }catch(e){
+    note.textContent = 'La demande n\'a pas pu être envoyée. Réessayez dans un instant.';
+  }
+  if(btn){ btn.disabled = false; btn.textContent = 'Envoyer le transfert'; }
 }
 
 /* ---------- Contrôle de la vente ---------- */
