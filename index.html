@@ -968,12 +968,16 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
           <button class="btn-small" type="button" onclick="singpayTransfer(this)">Envoyer le transfert</button>
         </div>
         <p class="pay-save-note" id="trNote"></p>
-        <div class="field" style="margin-top:14px;"><label>Vérifier une demande (référence SingPay)</label><input type="text" id="tr_ref" placeholder="reversement_1790182873663"></div>
+        <div class="field" style="margin-top:14px;"><label>Vérifier une demande (identifiant de transaction SingPay, sinon référence)</label><input type="text" id="tr_ref" placeholder="identifiant renvoyé par SingPay"></div>
         <div class="sale-actions">
           <button class="btn-small" type="button" onclick="singpayTxStatus(this)">Vérifier l'état chez SingPay</button>
         </div>
         <p class="pay-help">Affiche la réponse brute de SingPay pour cette référence : on y voit si la demande a été traitée comme un <b>transfert</b> (crédit vers le téléphone) ou comme un <b>paiement</b> (débit du téléphone), et son statut.</p>
         <p class="pay-save-note" id="trStatusNote" style="white-space:pre-wrap;word-break:break-all;"></p>
+        <div class="sale-actions" style="margin-top:14px;">
+          <button class="btn-small" type="button" onclick="loadSingpayTransfers(this)">Afficher les demandes de reversement envoyées</button>
+        </div>
+        <div id="trHistory" style="white-space:pre-wrap;word-break:break-all;font-size:.85em;"></div>
       </div>
     </div>
 
@@ -1510,8 +1514,11 @@ async function singpayTransfer(btn){
         + (code && !msg ? '' : (code ? ' [' + code + ']' : ''));
     } else if(d.ok){
       note.textContent = '✓ Demande acceptée par SingPay (référence ' + (d.reference || '—') + '). Vérifiez la réception sur le téléphone d\'ici quelques minutes, puis le relevé du portefeuille.';
+      note.textContent += d.txId
+        ? '\nIdentifiant de transaction SingPay : ' + d.txId
+        : '\nRéponse de SingPay : ' + JSON.stringify(d.response || {}).slice(0, 300);
       const refEl = document.getElementById('tr_ref');
-      if(refEl && d.reference) refEl.value = d.reference;
+      if(refEl) refEl.value = d.txId || d.reference || '';
     } else {
       const raw = d && d.response ? JSON.stringify(d.response) : '';
       note.textContent = '✗ SingPay a refusé (HTTP ' + (d && d.http || '?') + ') : '
@@ -1524,11 +1531,33 @@ async function singpayTransfer(btn){
   if(btn){ btn.disabled = false; btn.textContent = 'Envoyer le transfert'; }
 }
 
+/* Journal des demandes de reversement envoyées à SingPay */
+async function loadSingpayTransfers(btn){
+  const box = document.getElementById('trHistory');
+  if(btn){ btn.disabled = true; }
+  box.textContent = 'Chargement…';
+  try{
+    const r = await adminFetch('singpay-transfers');
+    const d = await r.json();
+    const list = (d && d.transfers) || [];
+    if(!list.length){ box.textContent = 'Aucune demande enregistrée (les demandes antérieures à cette version ne sont pas listées : voir les logs Vercel, ligne « singpay_transfer »).'; }
+    else {
+      box.textContent = list.map(t =>
+        new Date(t.ts).toLocaleString('fr-FR') + ' — ' + Number(t.amount).toLocaleString('fr-FR') + ' FCFA → ' + t.msisdn + ' (' + t.operator + ')'
+        + '\n  référence : ' + t.reference
+        + '\n  transaction SingPay : ' + (t.txId || '—')
+        + '\n  HTTP ' + t.http + ' : ' + JSON.stringify(t.response)
+      ).join('\n\n');
+    }
+  }catch(e){ box.textContent = 'Impossible de charger le journal.'; }
+  if(btn){ btn.disabled = false; }
+}
+
 /* Interroge SingPay sur une référence de reversement et affiche sa réponse brute */
 async function singpayTxStatus(btn){
   const ref = (document.getElementById('tr_ref').value || '').trim();
   const note = document.getElementById('trStatusNote');
-  if(!ref){ note.textContent = 'Indiquez la référence (ex. reversement_1790182873663).'; return; }
+  if(!ref){ note.textContent = 'Indiquez l\'identifiant de transaction SingPay (ou la référence reversement_…).'; return; }
   if(btn){ btn.disabled = true; btn.textContent = 'Vérification…'; }
   note.textContent = 'Interrogation de SingPay…';
   try{
