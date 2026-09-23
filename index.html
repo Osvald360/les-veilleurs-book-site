@@ -1532,12 +1532,17 @@ async function singpayTxStatus(btn){
   if(btn){ btn.disabled = true; btn.textContent = 'Vérification…'; }
   note.textContent = 'Interrogation de SingPay…';
   try{
-    const r = await adminFetch('singpay-tx-status&ref=' + encodeURIComponent(ref));
+    const r = await adminFetch('singpay-tx-status', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ ref })
+    });
+    const txt = await r.text();
     let d = null;
-    try{ d = await r.json(); }catch(e){}
+    try{ d = JSON.parse(txt); }catch(e){}
     if(!d || !('http' in d)){
       note.textContent = '✗ Le serveur n\'a pas pu interroger SingPay (erreur ' + r.status + ') : '
-        + ((d && (d.detail || d.error)) || 'réponse illisible');
+        + ((d && (d.detail || d.error)) || ('réponse non JSON : ' + txt.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,200)));
     } else {
       note.textContent = 'SingPay répond HTTP ' + d.http + ' :\n' + JSON.stringify(d.response, null, 2);
     }

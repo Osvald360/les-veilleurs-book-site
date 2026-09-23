@@ -453,7 +453,7 @@ export default async function handler(req, res) {
       // référence marchande : réponse brute renvoyée telle quelle, pour
       // voir comment SingPay a traité la demande (transfert ou débit).
       case 'singpay-tx-status': {
-        const ref = String((req.query && req.query.ref) || '').trim();
+        const ref = String((req.body && req.body.ref) || (req.query && req.query.ref) || '').trim();
         if (!ref || ref.length > 120) {
           return res.status(400).json({ error: 'bad_reference', detail: 'Référence manquante ou invalide.' });
         }
