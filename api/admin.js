@@ -396,6 +396,88 @@ export default async function handler(req, res) {
       // le téléphone du destinataire. Les reversements se font depuis
       // l'espace marchand SingPay (compte de décaissement).
 
+      // Ventes SingPay payées, avec l'état de leur reversement.
+      case 'singpay-payouts-list': {
+        const orders = await listOrders(300);
+        const list = orders
+          .filter((o) => o && o.status === 'paid' && (o.provider === 'singpay' || o.method === 'mobile_money'))
+          .map((o) => ({
+            id: o.id, paidAt: o.paidAt || o.createdAt, amountXAF: o.amountXAF,
+            providerTxId: o.providerTxId || o.singpayTxId || null,
+            payout: o.singpayPayout || null,
+          }));
+        return res.status(200).json({ ok: true, orders: list });
+      }
+
+      // Reversement d'une vente SingPay vers le compte de décaissement :
+      // POST /v1/transfer { reference, disbursement, amount:"ALL" } — le
+      // « transfert » SingPay est lié à une transaction encaissée, pas un
+      // envoi libre vers un numéro (aucun débit possible sur un téléphone).
+      // La réponse brute est renvoyée et conservée sur la commande.
+      case 'singpay-payout': {
+        const orderId = String((req.body && req.body.orderId) || '').trim();
+        if (!orderId) return res.status(400).json({ error: 'bad_order', detail: 'Commande manquante.' });
+        const order = await getOrder(orderId);
+        if (!order || order.status !== 'paid') {
+          return res.status(400).json({ error: 'bad_order', detail: 'Commande introuvable ou non payée.' });
+        }
+        const settings = await getSettings();
+        if (!settings.singpayClientId || !settings.singpayClientSecret || !settings.singpayWallet) {
+          return res.status(400).json({ error: 'singpay_not_configured', detail: 'Identifiants SingPay incomplets (Client ID, Client Secret ou Wallet).' });
+        }
+        if (!settings.singpayDisbursement) {
+          return res.status(400).json({ error: 'no_disbursement', detail: 'ID de distribution (disbursement) manquant : renseignez-le dans l\'onglet Paiements (il identifie le compte de décaissement chez SingPay).' });
+        }
+        const headers = {
+          'x-client-id': settings.singpayClientId,
+          'x-client-secret': settings.singpayClientSecret,
+          'x-wallet': settings.singpayWallet,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        };
+        // Référence marchande d'abord (celle envoyée à l'encaissement) ; en
+        // cas de refus, on retente avec l'identifiant de transaction SingPay.
+        const refs = [order.id];
+        const txId = order.providerTxId || order.singpayTxId;
+        if (txId && txId !== order.id) refs.push(txId);
+        const attempts = [];
+        let final = null;
+        for (const reference of refs) {
+          for (const url of ['https://gateway.singpay.ga/v1/transfer', 'https://gateway.singpay.ga/transfer']) {
+            const ctrl = new AbortController();
+            const cut = setTimeout(() => ctrl.abort(), 12000);
+            let r, data;
+            try {
+              r = await fetch(url, {
+                method: 'POST', headers, signal: ctrl.signal,
+                body: JSON.stringify({ reference, disbursement: settings.singpayDisbursement, amount: 'ALL' }),
+              });
+              const txt = await r.text();
+              try { data = JSON.parse(txt); } catch (e) { data = { raw: txt.slice(0, 500) }; }
+            } catch (e) {
+              clearTimeout(cut);
+              attempts.push({ url, reference, error: (e && e.message) || 'erreur réseau' });
+              continue;
+            }
+            clearTimeout(cut);
+            attempts.push({ url, reference, http: r.status, response: data });
+            // 404 sur /v1/transfer : on essaie l'autre chemin ; sinon on s'arrête là.
+            if (r.status === 404) continue;
+            final = { http: r.status, ok: r.ok, reference, url, response: data };
+            break;
+          }
+          if (final && final.ok) break;
+        }
+        const record = { ts: new Date().toISOString(), orderId, ok: Boolean(final && final.ok), http: final ? final.http : null, response: final ? final.response : null, attempts };
+        console.error('singpay_payout', orderId, JSON.stringify(record).slice(0, 600));
+        try { await updateOrder(orderId, { singpayPayout: record }); } catch (e) {}
+        try {
+          await store.lpush('singpayTransfers', JSON.stringify({ ...record, amount: order.amountXAF, reference: orderId }));
+          await store.ltrim('singpayTransfers', 0, 19);
+        } catch (e) {}
+        return res.status(200).json({ ok: record.ok, http: record.http, response: record.response, attempts });
+      }
+
       // Journal des reversements SingPay (20 derniers).
       case 'singpay-transfers': {
         let rows = [];
