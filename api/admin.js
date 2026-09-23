@@ -389,76 +389,12 @@ export default async function handler(req, res) {
         return res.status(200).json(out);
       }
 
-      // Reversement : transfère une somme du portefeuille SingPay vers un
-      // numéro Mobile Money (isTransfer:true — le sens inverse d'un
-      // encaissement). Utilisé depuis l'onglet Système pour récupérer
-      // l'argent encaissé sans attendre les reversements automatiques.
-      // La réponse brute de SingPay est renvoyée telle quelle : en cas de
-      // refus (GoLive incomplet, transferts non activés...), le message
-      // exact s'affiche à l'écran.
-      case 'singpay-transfer': {
-        const b = req.body || {};
-        const amount = Math.floor(Number(b.amount));
-        if (!Number.isFinite(amount) || amount < 100) {
-          return res.status(400).json({ error: 'bad_amount', detail: 'Montant invalide (minimum 100 FCFA).' });
-        }
-        let m = String(b.msisdn || '').replace(/[^0-9]/g, '');
-        if (m.startsWith('00241')) m = m.slice(5);
-        else if (m.startsWith('241') && m.length > 9) m = m.slice(3);
-        if (m.length === 8) m = '0' + m;
-        if (m.length !== 9) {
-          return res.status(400).json({ error: 'bad_msisdn', detail: 'Numéro invalide (attendu : 9 chiffres, ex. 074643838).' });
-        }
-        const settings = await getSettings();
-        if (!settings.singpayClientId || !settings.singpayClientSecret || !settings.singpayWallet) {
-          return res.status(400).json({ error: 'singpay_not_configured', detail: 'Identifiants SingPay incomplets (Client ID, Client Secret ou Wallet).' });
-        }
-        const endpoint = b.operator === 'moov'
-          ? 'https://gateway.singpay.ga/v1/62/paiement'
-          : 'https://gateway.singpay.ga/v1/74/paiement';
-        const payload = {
-          amount,
-          reference: 'reversement_' + Date.now(),
-          client_msisdn: m,
-          portefeuille: settings.singpayWallet,
-          isTransfer: true,
-        };
-        if (settings.singpayDisbursement) payload.disbursement = settings.singpayDisbursement;
-        const ctrl = new AbortController();
-        const cut = setTimeout(() => ctrl.abort(), 12000);
-        let r, data = {};
-        try {
-          r = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'x-client-id': settings.singpayClientId,
-              'x-client-secret': settings.singpayClientSecret,
-              'x-wallet': settings.singpayWallet,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-            signal: ctrl.signal,
-          });
-          try { data = await r.json(); } catch (e) {}
-        } catch (e) {
-          clearTimeout(cut);
-          return res.status(200).json({ ok: false, detail: 'SingPay injoignable : ' + ((e && e.message) || 'erreur réseau') });
-        }
-        clearTimeout(cut);
-        console.error('singpay_transfer', r.status, amount, m, JSON.stringify(data).slice(0, 300));
-        const txId = data && data.transaction && data.transaction.id ? String(data.transaction.id) : null;
-        // Journal des reversements (20 derniers) : la réponse complète de
-        // SingPay est conservée, avec son identifiant de transaction, pour
-        // pouvoir vérifier plus tard ce qu'est devenue la demande.
-        try {
-          await store.lpush('singpayTransfers', JSON.stringify({
-            ts: new Date().toISOString(), amount, msisdn: m, operator: b.operator === 'moov' ? 'moov' : 'airtel',
-            reference: payload.reference, http: r.status, txId, response: data,
-          }));
-          await store.ltrim('singpayTransfers', 0, 19);
-        } catch (e) {}
-        return res.status(200).json({ ok: r.ok, http: r.status, reference: payload.reference, txId, response: data });
-      }
+      // NB : l'ancienne action singpay-transfer (POST /{op}/paiement avec
+      // isTransfer:true) a été retirée. L'API SingPay ne fait pas de
+      // versement portefeuille → numéro : isTransfer n'est qu'un champ des
+      // encaissements ordinaires et déclenchait une demande de paiement sur
+      // le téléphone du destinataire. Les reversements se font depuis
+      // l'espace marchand SingPay (compte de décaissement).
 
       // Journal des reversements SingPay (20 derniers).
       case 'singpay-transfers': {
