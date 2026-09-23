@@ -435,38 +435,31 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         };
-        // Référence marchande d'abord (celle envoyée à l'encaissement) ; en
-        // cas de refus, on retente avec l'identifiant de transaction SingPay.
-        const refs = [order.id];
-        const txId = order.providerTxId || order.singpayTxId;
-        if (txId && txId !== order.id) refs.push(txId);
+        // La référence attendue est la référence marchande envoyée à
+        // l'encaissement (l'identifiant de transaction SingPay répond
+        // « introuvable »). Un refus « non configurée pour le transfert »
+        // signifie que la vente a été encaissée sans isTransfer:true.
+        const reference = order.id;
+        const url = 'https://gateway.singpay.ga/v1/transfer';
         const attempts = [];
         let final = null;
-        for (const reference of refs) {
-          for (const url of ['https://gateway.singpay.ga/v1/transfer', 'https://gateway.singpay.ga/transfer']) {
-            const ctrl = new AbortController();
-            const cut = setTimeout(() => ctrl.abort(), 12000);
-            let r, data;
-            try {
-              r = await fetch(url, {
-                method: 'POST', headers, signal: ctrl.signal,
-                body: JSON.stringify({ reference, disbursement: settings.singpayDisbursement, amount: 'ALL' }),
-              });
-              const txt = await r.text();
-              try { data = JSON.parse(txt); } catch (e) { data = { raw: txt.slice(0, 500) }; }
-            } catch (e) {
-              clearTimeout(cut);
-              attempts.push({ url, reference, error: (e && e.message) || 'erreur réseau' });
-              continue;
-            }
-            clearTimeout(cut);
+        {
+          const ctrl = new AbortController();
+          const cut = setTimeout(() => ctrl.abort(), 12000);
+          try {
+            const r = await fetch(url, {
+              method: 'POST', headers, signal: ctrl.signal,
+              body: JSON.stringify({ reference, disbursement: settings.singpayDisbursement, amount: 'ALL' }),
+            });
+            const txt = await r.text();
+            let data;
+            try { data = JSON.parse(txt); } catch (e) { data = { raw: txt.slice(0, 500) }; }
             attempts.push({ url, reference, http: r.status, response: data });
-            // 404 sur /v1/transfer : on essaie l'autre chemin ; sinon on s'arrête là.
-            if (r.status === 404) continue;
             final = { http: r.status, ok: r.ok, reference, url, response: data };
-            break;
+          } catch (e) {
+            attempts.push({ url, reference, error: (e && e.message) || 'erreur réseau' });
           }
-          if (final && final.ok) break;
+          clearTimeout(cut);
         }
         const record = { ts: new Date().toISOString(), orderId, ok: Boolean(final && final.ok), http: final ? final.http : null, response: final ? final.response : null, attempts };
         console.error('singpay_payout', orderId, JSON.stringify(record).slice(0, 600));

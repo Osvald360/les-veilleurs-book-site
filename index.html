@@ -955,7 +955,8 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
 
       <div class="pay-group" style="margin-top:22px;">
         <h3>Reverser les ventes SingPay</h3>
-        <p class="pay-help">Chez SingPay, un <b>transfert</b> reverse une vente encaissée vers votre <b>compte de décaissement</b> (« ID de distribution » dans l'onglet Paiements) : ce n'est pas un envoi libre vers un numéro, et aucun débit n'est possible sur un téléphone. Chargez les ventes payées, puis cliquez sur « Reverser » : la réponse exacte de SingPay s'affiche. <b>Commencez par une seule vente</b> ; si l'argent arrive, faites les autres.</p>
+        <p class="pay-help">Chez SingPay, un <b>transfert</b> reverse une vente encaissée vers votre <b>compte de décaissement</b> (« ID de distribution » dans l'onglet Paiements) : ce n'est pas un envoi libre vers un numéro, et aucun débit n'est possible sur un téléphone. Chargez les ventes payées, puis cliquez sur « Reverser » : la réponse exacte de SingPay s'affiche.</p>
+        <p class="pay-help"><b>Ventes encaissées avant le 23/09/2026 :</b> elles ont été enregistrées chez SingPay sans le drapeau « transférable » (SingPay répond « transaction non configurée pour le transfert »). Le site ne peut pas les débloquer : demandez au support SingPay de les reverser vers votre compte de décaissement, en indiquant les références de commande listées ci-dessous. Les ventes suivantes sont encaissées avec ce drapeau et se reversent d'ici.</p>
         <div class="sale-actions">
           <button class="btn-small" type="button" onclick="loadSingpayPayouts(this)">Charger les ventes SingPay payées</button>
         </div>
@@ -1514,7 +1515,10 @@ async function singpayPayout(btn, orderId){
     } else if(d.ok){
       note.textContent = '✓ SingPay a accepté (HTTP ' + d.http + '). Vérifiez la réception sur le téléphone du compte de décaissement.\nRéponse : ' + JSON.stringify(d.response, null, 2);
     } else {
-      note.textContent = '✗ SingPay a refusé. Détail de chaque essai :\n' + d.attempts.map(a =>
+      const msg = d.attempts.map(a => a.response && a.response.message).find(Boolean) || '';
+      const hint = /pas configur/i.test(msg)
+        ? '\n→ Cette vente a été encaissée sans le drapeau « transférable » : à faire reverser par le support SingPay (voir ci-dessus).' : '';
+      note.textContent = '✗ SingPay a refusé.' + hint + '\nDétail :\n' + d.attempts.map(a =>
         a.url.replace('https://gateway.singpay.ga','') + ' (réf. ' + a.reference + ') → ' + (a.error ? 'erreur : ' + a.error : 'HTTP ' + a.http + ' : ' + JSON.stringify(a.response))
       ).join('\n');
     }
