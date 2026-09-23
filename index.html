@@ -954,20 +954,15 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
       </div>
 
       <div class="pay-group" style="margin-top:22px;">
-        <h3>Reverser l'argent SingPay</h3>
-        <p class="pay-help">Transfère une somme du portefeuille SingPay vers un numéro Mobile Money (le vôtre). <b>Faites d'abord un essai avec un petit montant</b> (ex. 1 000 FCFA) : s'il arrive sur le téléphone, envoyez le reste. Si SingPay refuse (GoLive non finalisé, transferts non activés sur le compte), son message exact s'affichera ci-dessous — dans ce cas il faudra passer par leur support.</p>
-        <div class="field"><label>Montant (FCFA)</label><input type="number" id="tr_amount" min="100" placeholder="1000"></div>
-        <div class="field"><label>Numéro Mobile Money destinataire</label><input type="text" id="tr_msisdn" placeholder="074643838"></div>
-        <div class="field"><label>Opérateur du numéro</label>
-          <select id="tr_operator">
-            <option value="airtel">Airtel Money</option>
-            <option value="moov">Moov Money</option>
-          </select>
-        </div>
-        <div class="sale-actions">
-          <button class="btn-small" type="button" onclick="singpayTransfer(this)">Envoyer le transfert</button>
-        </div>
-        <p class="pay-save-note" id="trNote"></p>
+        <h3>Récupérer l'argent SingPay</h3>
+        <p class="pay-help"><b>L'API SingPay ne permet pas d'envoyer de l'argent du portefeuille vers un numéro.</b> Le champ <code>isTransfer</code> utilisé par l'ancien bouton « Envoyer le transfert » ne fait qu'un encaissement classique : il déclenchait une demande de <i>paiement</i> sur votre propre téléphone. Ce bouton a été retiré.</p>
+        <p class="pay-help">Les fonds encaissés sont reversés par SingPay lui-même vers le <b>compte de décaissement</b> (« disbursement ») déclaré sur votre compte marchand. Marche à suivre, dans votre espace <a href="https://client.singpay.ga" target="_blank" rel="noopener">client.singpay.ga</a> :</p>
+        <ol class="pay-help" style="padding-left:1.2em;">
+          <li>Vérifier que le <b>GoLive</b> du portefeuille est finalisé (compte de production, pas de test).</li>
+          <li>Renseigner ou vérifier le <b>compte de décaissement</b> : votre numéro Airtel Money (074643838) ou Moov Money.</li>
+          <li>Demander le reversement depuis leur tableau de bord, ou attendre le reversement automatique selon la périodicité de votre contrat.</li>
+          <li>En cas de doute, écrire au support SingPay en indiquant votre identifiant de portefeuille et le numéro de décaissement souhaité.</li>
+        </ol>
         <div class="field" style="margin-top:14px;"><label>Vérifier une demande (identifiant de transaction SingPay, sinon référence)</label><input type="text" id="tr_ref" placeholder="identifiant renvoyé par SingPay"></div>
         <div class="sale-actions">
           <button class="btn-small" type="button" onclick="singpayTxStatus(this)">Vérifier l'état chez SingPay</button>
@@ -1478,57 +1473,6 @@ async function loadSystem(){
         : "La fenêtre de 24 h n'a pas encore démarré : elle se déclenchera à la première visite.";
     }
   }catch(e){}
-}
-
-/* ---------- Reversement SingPay (portefeuille → Mobile Money) ---------- */
-async function singpayTransfer(btn){
-  const amount = parseInt(document.getElementById('tr_amount').value, 10);
-  const msisdn = (document.getElementById('tr_msisdn').value || '').trim();
-  const operator = document.getElementById('tr_operator').value;
-  const note = document.getElementById('trNote');
-  if(!(amount >= 100)){ note.textContent = 'Indiquez un montant (minimum 100 FCFA).'; return; }
-  if(!msisdn){ note.textContent = 'Indiquez le numéro Mobile Money destinataire.'; return; }
-  if(!confirm('Envoyer ' + amount.toLocaleString('fr-FR') + ' FCFA du portefeuille SingPay vers le ' + msisdn + ' (' + (operator==='moov'?'Moov':'Airtel') + ') ?\n\nCette action transfère de l\'argent réel.')) return;
-  if(btn){ btn.disabled = true; btn.textContent = 'Transfert…'; }
-  note.textContent = 'Envoi de la demande à SingPay…';
-  try{
-    const r = await adminFetch('singpay-transfer', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ amount, msisdn, operator })
-    });
-    let d = null;
-    try{ d = await r.json(); }catch(e){}
-    if(!d || !('http' in d) && !d.ok){
-      // Refus côté serveur du site (SingPay n'a pas été appelé) : on affiche
-      // le vrai motif au lieu de « HTTP ? : raison inconnue ».
-      const code = d && d.error;
-      const msg = {
-        unauthorized: 'session admin expirée — déconnectez-vous puis reconnectez-vous avec le mot de passe.',
-        singpay_not_configured: 'identifiants SingPay incomplets (Client ID, Client Secret ou Wallet manquant dans les réglages / variables Vercel).',
-        unknown_action: 'le serveur ne connaît pas encore cette fonction — le dernier déploiement Vercel n\'est pas en ligne.',
-        storage_not_configured: 'stockage (base de données) non configuré.'
-      }[code];
-      note.textContent = '✗ Transfert non envoyé (erreur ' + r.status + ') : '
-        + (msg || (d && (d.detail || d.message)) || code || 'réponse illisible du serveur')
-        + (code && !msg ? '' : (code ? ' [' + code + ']' : ''));
-    } else if(d.ok){
-      note.textContent = '✓ Demande acceptée par SingPay (référence ' + (d.reference || '—') + '). Vérifiez la réception sur le téléphone d\'ici quelques minutes, puis le relevé du portefeuille.';
-      note.textContent += d.txId
-        ? '\nIdentifiant de transaction SingPay : ' + d.txId
-        : '\nRéponse de SingPay : ' + JSON.stringify(d.response || {}).slice(0, 300);
-      const refEl = document.getElementById('tr_ref');
-      if(refEl) refEl.value = d.txId || d.reference || '';
-    } else {
-      const raw = d && d.response ? JSON.stringify(d.response) : '';
-      note.textContent = '✗ SingPay a refusé (HTTP ' + (d && d.http || '?') + ') : '
-        + ((d && d.detail) || (d && d.response && (d.response.message || d.response.error)) || 'raison inconnue')
-        + (raw && raw.length < 220 ? ' — réponse : ' + raw : '');
-    }
-  }catch(e){
-    note.textContent = 'La demande n\'a pas pu être envoyée. Réessayez dans un instant.';
-  }
-  if(btn){ btn.disabled = false; btn.textContent = 'Envoyer le transfert'; }
 }
 
 /* Journal des demandes de reversement envoyées à SingPay */
