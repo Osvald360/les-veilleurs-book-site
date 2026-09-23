@@ -954,15 +954,13 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
       </div>
 
       <div class="pay-group" style="margin-top:22px;">
-        <h3>Récupérer l'argent SingPay</h3>
-        <p class="pay-help"><b>L'API SingPay ne permet pas d'envoyer de l'argent du portefeuille vers un numéro.</b> Le champ <code>isTransfer</code> utilisé par l'ancien bouton « Envoyer le transfert » ne fait qu'un encaissement classique : il déclenchait une demande de <i>paiement</i> sur votre propre téléphone. Ce bouton a été retiré.</p>
-        <p class="pay-help">Les fonds encaissés sont reversés par SingPay lui-même vers le <b>compte de décaissement</b> (« disbursement ») déclaré sur votre compte marchand. Marche à suivre, dans votre espace <a href="https://client.singpay.ga" target="_blank" rel="noopener">client.singpay.ga</a> :</p>
-        <ol class="pay-help" style="padding-left:1.2em;">
-          <li>Vérifier que le <b>GoLive</b> du portefeuille est finalisé (compte de production, pas de test).</li>
-          <li>Renseigner ou vérifier le <b>compte de décaissement</b> : votre numéro Airtel Money (074643838) ou Moov Money.</li>
-          <li>Demander le reversement depuis leur tableau de bord, ou attendre le reversement automatique selon la périodicité de votre contrat.</li>
-          <li>En cas de doute, écrire au support SingPay en indiquant votre identifiant de portefeuille et le numéro de décaissement souhaité.</li>
-        </ol>
+        <h3>Reverser les ventes SingPay</h3>
+        <p class="pay-help">Chez SingPay, un <b>transfert</b> reverse une vente encaissée vers votre <b>compte de décaissement</b> (« ID de distribution » dans l'onglet Paiements) : ce n'est pas un envoi libre vers un numéro, et aucun débit n'est possible sur un téléphone. Chargez les ventes payées, puis cliquez sur « Reverser » : la réponse exacte de SingPay s'affiche. <b>Commencez par une seule vente</b> ; si l'argent arrive, faites les autres.</p>
+        <div class="sale-actions">
+          <button class="btn-small" type="button" onclick="loadSingpayPayouts(this)">Charger les ventes SingPay payées</button>
+        </div>
+        <div id="payoutList" style="font-size:.9em;"></div>
+        <p class="pay-save-note" id="payoutNote" style="white-space:pre-wrap;word-break:break-all;"></p>
         <div class="field" style="margin-top:14px;"><label>Vérifier une demande (identifiant de transaction SingPay, sinon référence)</label><input type="text" id="tr_ref" placeholder="identifiant renvoyé par SingPay"></div>
         <div class="sale-actions">
           <button class="btn-small" type="button" onclick="singpayTxStatus(this)">Vérifier l'état chez SingPay</button>
@@ -1473,6 +1471,56 @@ async function loadSystem(){
         : "La fenêtre de 24 h n'a pas encore démarré : elle se déclenchera à la première visite.";
     }
   }catch(e){}
+}
+
+/* Ventes SingPay payées et reversement vers le compte de décaissement */
+async function loadSingpayPayouts(btn){
+  const box = document.getElementById('payoutList');
+  if(btn) btn.disabled = true;
+  box.textContent = 'Chargement…';
+  try{
+    const r = await adminFetch('singpay-payouts-list');
+    const d = await r.json();
+    const list = (d && d.orders) || [];
+    if(!list.length){ box.textContent = 'Aucune vente SingPay payée.'; }
+    else {
+      box.innerHTML = list.map(o => {
+        const st = o.payout ? (o.payout.ok ? '✓ reversement accepté le ' + new Date(o.payout.ts).toLocaleString('fr-FR') : '✗ dernier essai refusé (HTTP ' + (o.payout.http || '?') + ')') : 'pas encore reversée';
+        return '<div class="sys-check" style="align-items:center;gap:10px;flex-wrap:wrap;">'
+          + '<div><b>' + Number(o.amountXAF || 0).toLocaleString('fr-FR') + ' FCFA</b> — ' + new Date(o.paidAt).toLocaleString('fr-FR')
+          + '<div class="sys-detail">commande ' + o.id + (o.providerTxId ? ' · transaction SingPay ' + o.providerTxId : '') + '<br>' + st + '</div></div>'
+          + '<button class="btn-small" type="button" onclick="singpayPayout(this, \'' + String(o.id).replace(/[^\w.:-]/g,'') + '\')">Reverser</button>'
+          + '</div>';
+      }).join('');
+    }
+  }catch(e){ box.textContent = 'Impossible de charger les ventes.'; }
+  if(btn) btn.disabled = false;
+}
+
+async function singpayPayout(btn, orderId){
+  const note = document.getElementById('payoutNote');
+  if(!confirm('Demander à SingPay de reverser la vente ' + orderId + ' vers votre compte de décaissement ?')) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'Envoi…'; }
+  note.textContent = 'Demande envoyée à SingPay…';
+  try{
+    const r = await adminFetch('singpay-payout', {
+      method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ orderId })
+    });
+    const txt = await r.text();
+    let d = null;
+    try{ d = JSON.parse(txt); }catch(e){}
+    if(!d || !('attempts' in d)){
+      note.textContent = '✗ Demande non envoyée (erreur ' + r.status + ') : ' + ((d && (d.detail || d.error)) || ('réponse non JSON : ' + txt.replace(/<[^>]+>/g,' ').slice(0,200)));
+    } else if(d.ok){
+      note.textContent = '✓ SingPay a accepté (HTTP ' + d.http + '). Vérifiez la réception sur le téléphone du compte de décaissement.\nRéponse : ' + JSON.stringify(d.response, null, 2);
+    } else {
+      note.textContent = '✗ SingPay a refusé. Détail de chaque essai :\n' + d.attempts.map(a =>
+        a.url.replace('https://gateway.singpay.ga','') + ' (réf. ' + a.reference + ') → ' + (a.error ? 'erreur : ' + a.error : 'HTTP ' + a.http + ' : ' + JSON.stringify(a.response))
+      ).join('\n');
+    }
+  }catch(e){ note.textContent = 'La demande n\'a pas pu être envoyée. Réessayez dans un instant.'; }
+  if(btn){ btn.disabled = false; btn.textContent = 'Reverser'; }
+  loadSingpayPayouts();
 }
 
 /* Journal des demandes de reversement envoyées à SingPay */
