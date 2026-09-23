@@ -411,7 +411,7 @@ export default async function handler(req, res) {
         }
         const settings = await getSettings();
         if (!settings.singpayClientId || !settings.singpayClientSecret || !settings.singpayWallet) {
-          return res.status(400).json({ error: 'singpay_not_configured' });
+          return res.status(400).json({ error: 'singpay_not_configured', detail: 'Identifiants SingPay incomplets (Client ID, Client Secret ou Wallet).' });
         }
         const endpoint = b.operator === 'moov'
           ? 'https://gateway.singpay.ga/v1/62/paiement'
@@ -447,6 +447,40 @@ export default async function handler(req, res) {
         clearTimeout(cut);
         console.error('singpay_transfer', r.status, amount, m, JSON.stringify(data).slice(0, 300));
         return res.status(200).json({ ok: r.ok, http: r.status, reference: payload.reference, response: data });
+      }
+
+      // État d'une demande SingPay (reversement ou paiement) d'après sa
+      // référence marchande : réponse brute renvoyée telle quelle, pour
+      // voir comment SingPay a traité la demande (transfert ou débit).
+      case 'singpay-tx-status': {
+        const ref = String((req.query && req.query.ref) || '').trim();
+        if (!ref || ref.length > 120) {
+          return res.status(400).json({ error: 'bad_reference', detail: 'Référence manquante ou invalide.' });
+        }
+        const settings = await getSettings();
+        if (!settings.singpayClientId || !settings.singpayClientSecret || !settings.singpayWallet) {
+          return res.status(400).json({ error: 'singpay_not_configured', detail: 'Identifiants SingPay incomplets (Client ID, Client Secret ou Wallet).' });
+        }
+        const ctrl = new AbortController();
+        const cut = setTimeout(() => ctrl.abort(), 12000);
+        let r, data = {};
+        try {
+          r = await fetch('https://gateway.singpay.ga/v1/transaction/api/status/' + encodeURIComponent(ref), {
+            headers: {
+              'x-client-id': settings.singpayClientId,
+              'x-client-secret': settings.singpayClientSecret,
+              'x-wallet': settings.singpayWallet,
+              Accept: 'application/json',
+            },
+            signal: ctrl.signal,
+          });
+          try { data = await r.json(); } catch (e) {}
+        } catch (e) {
+          clearTimeout(cut);
+          return res.status(200).json({ ok: false, detail: 'SingPay injoignable : ' + ((e && e.message) || 'erreur réseau') });
+        }
+        clearTimeout(cut);
+        return res.status(200).json({ ok: r.ok, http: r.status, response: data });
       }
 
       // Renvoi de l'e-mail de confirmation à une commande payée qui ne l'a

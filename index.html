@@ -968,6 +968,12 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
           <button class="btn-small" type="button" onclick="singpayTransfer(this)">Envoyer le transfert</button>
         </div>
         <p class="pay-save-note" id="trNote"></p>
+        <div class="field" style="margin-top:14px;"><label>Vérifier une demande (référence SingPay)</label><input type="text" id="tr_ref" placeholder="reversement_1790182873663"></div>
+        <div class="sale-actions">
+          <button class="btn-small" type="button" onclick="singpayTxStatus(this)">Vérifier l'état chez SingPay</button>
+        </div>
+        <p class="pay-help">Affiche la réponse brute de SingPay pour cette référence : on y voit si la demande a été traitée comme un <b>transfert</b> (crédit vers le téléphone) ou comme un <b>paiement</b> (débit du téléphone), et son statut.</p>
+        <p class="pay-save-note" id="trStatusNote" style="white-space:pre-wrap;word-break:break-all;"></p>
       </div>
     </div>
 
@@ -1487,9 +1493,25 @@ async function singpayTransfer(btn){
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ amount, msisdn, operator })
     });
-    const d = await r.json();
-    if(d && d.ok){
+    let d = null;
+    try{ d = await r.json(); }catch(e){}
+    if(!d || !('http' in d) && !d.ok){
+      // Refus côté serveur du site (SingPay n'a pas été appelé) : on affiche
+      // le vrai motif au lieu de « HTTP ? : raison inconnue ».
+      const code = d && d.error;
+      const msg = {
+        unauthorized: 'session admin expirée — déconnectez-vous puis reconnectez-vous avec le mot de passe.',
+        singpay_not_configured: 'identifiants SingPay incomplets (Client ID, Client Secret ou Wallet manquant dans les réglages / variables Vercel).',
+        unknown_action: 'le serveur ne connaît pas encore cette fonction — le dernier déploiement Vercel n\'est pas en ligne.',
+        storage_not_configured: 'stockage (base de données) non configuré.'
+      }[code];
+      note.textContent = '✗ Transfert non envoyé (erreur ' + r.status + ') : '
+        + (msg || (d && (d.detail || d.message)) || code || 'réponse illisible du serveur')
+        + (code && !msg ? '' : (code ? ' [' + code + ']' : ''));
+    } else if(d.ok){
       note.textContent = '✓ Demande acceptée par SingPay (référence ' + (d.reference || '—') + '). Vérifiez la réception sur le téléphone d\'ici quelques minutes, puis le relevé du portefeuille.';
+      const refEl = document.getElementById('tr_ref');
+      if(refEl && d.reference) refEl.value = d.reference;
     } else {
       const raw = d && d.response ? JSON.stringify(d.response) : '';
       note.textContent = '✗ SingPay a refusé (HTTP ' + (d && d.http || '?') + ') : '
@@ -1500,6 +1522,29 @@ async function singpayTransfer(btn){
     note.textContent = 'La demande n\'a pas pu être envoyée. Réessayez dans un instant.';
   }
   if(btn){ btn.disabled = false; btn.textContent = 'Envoyer le transfert'; }
+}
+
+/* Interroge SingPay sur une référence de reversement et affiche sa réponse brute */
+async function singpayTxStatus(btn){
+  const ref = (document.getElementById('tr_ref').value || '').trim();
+  const note = document.getElementById('trStatusNote');
+  if(!ref){ note.textContent = 'Indiquez la référence (ex. reversement_1790182873663).'; return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Vérification…'; }
+  note.textContent = 'Interrogation de SingPay…';
+  try{
+    const r = await adminFetch('singpay-tx-status&ref=' + encodeURIComponent(ref));
+    let d = null;
+    try{ d = await r.json(); }catch(e){}
+    if(!d || !('http' in d)){
+      note.textContent = '✗ Le serveur n\'a pas pu interroger SingPay (erreur ' + r.status + ') : '
+        + ((d && (d.detail || d.error)) || 'réponse illisible');
+    } else {
+      note.textContent = 'SingPay répond HTTP ' + d.http + ' :\n' + JSON.stringify(d.response, null, 2);
+    }
+  }catch(e){
+    note.textContent = 'La vérification n\'a pas pu être envoyée. Réessayez dans un instant.';
+  }
+  if(btn){ btn.disabled = false; btn.textContent = 'Vérifier l\'état chez SingPay'; }
 }
 
 /* ---------- Contrôle de la vente ---------- */
