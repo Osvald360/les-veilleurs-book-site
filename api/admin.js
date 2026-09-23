@@ -411,7 +411,7 @@ export default async function handler(req, res) {
         }
         const settings = await getSettings();
         if (!settings.singpayClientId || !settings.singpayClientSecret || !settings.singpayWallet) {
-          return res.status(400).json({ error: 'singpay_not_configured' });
+          return res.status(400).json({ error: 'singpay_not_configured', detail: 'Identifiants SingPay incomplets (Client ID, Client Secret ou Wallet).' });
         }
         const endpoint = b.operator === 'moov'
           ? 'https://gateway.singpay.ga/v1/62/paiement'

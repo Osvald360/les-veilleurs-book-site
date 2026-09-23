@@ -1487,8 +1487,22 @@ async function singpayTransfer(btn){
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ amount, msisdn, operator })
     });
-    const d = await r.json();
-    if(d && d.ok){
+    let d = null;
+    try{ d = await r.json(); }catch(e){}
+    if(!d || !('http' in d) && !d.ok){
+      // Refus côté serveur du site (SingPay n'a pas été appelé) : on affiche
+      // le vrai motif au lieu de « HTTP ? : raison inconnue ».
+      const code = d && d.error;
+      const msg = {
+        unauthorized: 'session admin expirée — déconnectez-vous puis reconnectez-vous avec le mot de passe.',
+        singpay_not_configured: 'identifiants SingPay incomplets (Client ID, Client Secret ou Wallet manquant dans les réglages / variables Vercel).',
+        unknown_action: 'le serveur ne connaît pas encore cette fonction — le dernier déploiement Vercel n\'est pas en ligne.',
+        storage_not_configured: 'stockage (base de données) non configuré.'
+      }[code];
+      note.textContent = '✗ Transfert non envoyé (erreur ' + r.status + ') : '
+        + (msg || (d && (d.detail || d.message)) || code || 'réponse illisible du serveur')
+        + (code && !msg ? '' : (code ? ' [' + code + ']' : ''));
+    } else if(d.ok){
       note.textContent = '✓ Demande acceptée par SingPay (référence ' + (d.reference || '—') + '). Vérifiez la réception sur le téléphone d\'ici quelques minutes, puis le relevé du portefeuille.';
     } else {
       const raw = d && d.response ? JSON.stringify(d.response) : '';
