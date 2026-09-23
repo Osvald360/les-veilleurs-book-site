@@ -446,7 +446,26 @@ export default async function handler(req, res) {
         }
         clearTimeout(cut);
         console.error('singpay_transfer', r.status, amount, m, JSON.stringify(data).slice(0, 300));
-        return res.status(200).json({ ok: r.ok, http: r.status, reference: payload.reference, response: data });
+        const txId = data && data.transaction && data.transaction.id ? String(data.transaction.id) : null;
+        // Journal des reversements (20 derniers) : la réponse complète de
+        // SingPay est conservée, avec son identifiant de transaction, pour
+        // pouvoir vérifier plus tard ce qu'est devenue la demande.
+        try {
+          await store.lpush('singpayTransfers', JSON.stringify({
+            ts: new Date().toISOString(), amount, msisdn: m, operator: b.operator === 'moov' ? 'moov' : 'airtel',
+            reference: payload.reference, http: r.status, txId, response: data,
+          }));
+          await store.ltrim('singpayTransfers', 0, 19);
+        } catch (e) {}
+        return res.status(200).json({ ok: r.ok, http: r.status, reference: payload.reference, txId, response: data });
+      }
+
+      // Journal des reversements SingPay (20 derniers).
+      case 'singpay-transfers': {
+        let rows = [];
+        try { rows = await store.lrange('singpayTransfers', 0, 19); } catch (e) {}
+        const list = rows.map((x) => { try { return typeof x === 'string' ? JSON.parse(x) : x; } catch (e) { return null; } }).filter(Boolean);
+        return res.status(200).json({ ok: true, transfers: list });
       }
 
       // État d'une demande SingPay (reversement ou paiement) d'après sa
@@ -474,7 +493,8 @@ export default async function handler(req, res) {
             },
             signal: ctrl.signal,
           });
-          try { data = await r.json(); } catch (e) {}
+          const txt = await r.text();
+          try { data = JSON.parse(txt); } catch (e) { data = { raw: txt.slice(0, 500) }; }
         } catch (e) {
           clearTimeout(cut);
           return res.status(200).json({ ok: false, detail: 'SingPay injoignable : ' + ((e && e.message) || 'erreur réseau') });
