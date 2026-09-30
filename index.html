@@ -956,7 +956,7 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
       <div class="pay-group" style="margin-top:22px;">
         <h3>Reverser les ventes SingPay</h3>
         <p class="pay-help">Chez SingPay, un <b>transfert</b> reverse une vente encaissée vers votre <b>compte de décaissement</b> (« ID de distribution » dans l'onglet Paiements) : ce n'est pas un envoi libre vers un numéro, et aucun débit n'est possible sur un téléphone. Chargez les ventes payées, puis cliquez sur « Reverser » : la réponse exacte de SingPay s'affiche.</p>
-        <p class="pay-help"><b>Ventes encaissées avant le 23/09/2026 :</b> elles ont été enregistrées chez SingPay sans le drapeau « transférable » (SingPay répond « transaction non configurée pour le transfert »). Le site ne peut pas les débloquer : demandez au support SingPay de les reverser vers votre compte de décaissement, en indiquant les références de commande listées ci-dessous. Les ventes suivantes sont encaissées avec ce drapeau et se reversent d'ici.</p>
+        <p class="pay-help"><b>Recommandé :</b> les ventes sont encaissées avec <code>isTransfer: false</code>, comme le demande le support SingPay. Le reversement se fait alors par la <b>distribution manuelle</b> dans l'espace marchand SingPay (client.singpay.ga) ; le bouton « Reverser » ci-dessous ne s'applique qu'aux ventes encaissées avec <code>isTransfer: true</code> (du 23/09/2026 à ce changement).</p>
         <div class="sale-actions">
           <button class="btn-small" type="button" onclick="loadSingpayPayouts(this)">Charger les ventes SingPay payées</button>
         </div>

@@ -185,11 +185,10 @@ export default async function handler(req, res) {
         reference: orderId,
         client_msisdn: msisdn,
         portefeuille: settings.singpayWallet,
-        // Marque l'encaissement comme reversable : sans ce drapeau, SingPay
-        // refuse ensuite POST /v1/transfer (« transaction non configurée
-        // pour le transfert ») et les fonds restent bloqués dans le
-        // portefeuille.
-        isTransfer: true,
+        // Consigne du support SingPay : isTransfer doit rester à false,
+        // sinon la distribution manuelle depuis l'espace marchand devient
+        // impossible pour cette transaction.
+        isTransfer: false,
       };
       if (settings.singpayDisbursement) body.disbursement = settings.singpayDisbursement;
 
