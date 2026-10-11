@@ -1690,10 +1690,15 @@ function renderAdmin(data){
   // les acheteurs arrivés à l'étape du paiement, pas le nombre de clics.
   const auPaiement = new Set(txns.map(t => t.orderId).filter(Boolean)).size
                      || (txns.length ? 1 : 0);
+  /* Une même personne peut avoir payé plusieurs commandes : on compte aussi
+     les clients distincts (même e-mail ou même téléphone = même client). */
+  const personOf = personResolver(orders);
+  const clientsSingpay = new Set(paidOrders.filter(o=>o.provider === 'singpay').map(personOf)).size;
 
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-card"><div class="stat-num">${visits}</div><div class="stat-label">Visiteurs</div></div>
     <div class="stat-card"><div class="stat-num">${paid}</div><div class="stat-label">Ventes confirmées</div></div>
+    <div class="stat-card"><div class="stat-num">${clientsSingpay}</div><div class="stat-label">Clients SingPay ayant payé</div><div style="font-size:0.78rem;color:var(--ink-dim);margin-top:6px;">Airtel + Moov, chaque personne comptée une fois</div></div>
     <div class="stat-card"><div class="stat-num">${formatXaf(totalXaf)}</div><div class="stat-label">Recettes Mobile Money vérifiées</div><div style="font-size:0.78rem;color:var(--gold-soft);margin-top:6px;">net ≈ ${formatXaf(netXaf)} après commission</div></div>
     <div class="stat-card"><div class="stat-num">${formatEur(totalEur)}</div><div class="stat-label">Recettes carte / PayPal vérifiées</div><div style="font-size:0.78rem;color:var(--ink-dim);margin-top:6px;">avant frais Stripe / PayPal</div></div>
     <div class="stat-card"><div class="stat-num">${stock.remaining !== undefined ? stock.remaining : '—'}</div><div class="stat-label">Exemplaires restants</div></div>
@@ -1711,9 +1716,6 @@ function renderAdmin(data){
      lastMethod (Airtel vs Moov, carte vs Apple Pay) ; les anciennes ventes
      sans ce détail tombent dans la famille (Mobile Money). Les marquages
      manuels, sans preuve d'encaissement, sont comptés à part. */
-  /* Une même personne peut avoir payé plusieurs commandes : on compte aussi
-     les clients distincts (même e-mail ou même téléphone = même client). */
-  const personOf = personResolver(orders);
   const parMoyen = {};
   paidOrders.forEach(o=>{
     /* Le FOURNISSEUR qui a encaissé fait foi, pas le dernier moyen cliqué :
