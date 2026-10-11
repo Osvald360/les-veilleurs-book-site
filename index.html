@@ -883,9 +883,9 @@ body.low-stock .stock-row b{ color:var(--ember-light); }
       <div class="stat-grid" id="statGrid"></div>
     <p id="statNote" style="font-size:0.75rem;color:var(--ink-dim);margin:-28px 0 32px;"></p>
       <h3 style="font-size:1rem; margin-bottom:6px; color:var(--gold-soft);">Ventes confirmées par moyen</h3>
-      <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Nombre de paiements aboutis pour chaque moyen, avec le montant encaissé correspondant.</p>
+      <p style="color:var(--ink-dim); font-size:0.82rem; margin-bottom:14px;">Nombre de paiements aboutis pour chaque moyen, nombre de clients distincts ayant payé (même e-mail ou même téléphone = un seul client), et montant encaissé correspondant.</p>
       <table class="admin-table" style="margin-bottom:30px;">
-        <thead><tr><th>Moyen</th><th>Ventes</th><th>Montant encaissé</th></tr></thead>
+        <thead><tr><th>Moyen</th><th>Ventes</th><th>Clients</th><th>Montant encaissé</th></tr></thead>
         <tbody id="ventesMoyenBody"></tbody>
       </table>
           <h3 style="font-size:1rem; margin-bottom:6px; color:var(--gold-soft);">Moyens de paiement souhaités</h3>
@@ -1711,6 +1711,9 @@ function renderAdmin(data){
      lastMethod (Airtel vs Moov, carte vs Apple Pay) ; les anciennes ventes
      sans ce détail tombent dans la famille (Mobile Money). Les marquages
      manuels, sans preuve d'encaissement, sont comptés à part. */
+  /* Une même personne peut avoir payé plusieurs commandes : on compte aussi
+     les clients distincts (même e-mail ou même téléphone = même client). */
+  const personOf = personResolver(orders);
   const parMoyen = {};
   paidOrders.forEach(o=>{
     /* Le FOURNISSEUR qui a encaissé fait foi, pas le dernier moyen cliqué :
@@ -1721,8 +1724,9 @@ function renderAdmin(data){
       : o.provider === 'paypal' ? 'paypal'
       : o.provider === 'stripe' ? (o.lastMethod === 'applepay' ? 'applepay' : 'card')
       : (o.lastMethod || o.method || 'autre');
-    const e = parMoyen[key] || (parMoyen[key] = { n:0, xaf:0, eur:0 });
+    const e = parMoyen[key] || (parMoyen[key] = { n:0, xaf:0, eur:0, clients:{} });
     e.n++;
+    e.clients[personOf(o)] = true;
     if(Number(o.amountXAF) > 0) e.xaf += Number(o.amountXAF);
     else if(Number(o.amountEur) > 0) e.eur += Number(o.amountEur);
   });
@@ -1736,17 +1740,19 @@ function renderAdmin(data){
       ? moyenKeys.map(k=>{
           const e = parMoyen[k];
           const montant = [e.xaf ? formatXaf(e.xaf) : '', e.eur ? formatEur(e.eur) : ''].filter(Boolean).join(' + ') || '—';
-          return `<tr><td>${MOYEN_NOMS[k]||k}</td><td>${e.n}</td><td>${montant}</td></tr>`;
+          return `<tr><td>${MOYEN_NOMS[k]||k}</td><td>${e.n}</td><td>${Object.keys(e.clients).length}</td><td>${montant}</td></tr>`;
         }).join('')
-      : '<tr class="empty-row"><td colspan="3">Aucune vente confirmée pour l\'instant.</td></tr>';
+      : '<tr class="empty-row"><td colspan="4">Aucune vente confirmée pour l\'instant.</td></tr>';
     /* Ligne de synthèse SingPay : l'argent généré (brut) et ce qui doit se
        retrouver dans le portefeuille une fois tous les reversements passés
        (net, commission SingPay 2,5 % déduite). À comparer au relevé mw4473. */
-    const g = k => parMoyen[k] || { n:0, xaf:0 };
+    const g = k => parMoyen[k] || { n:0, xaf:0, clients:{} };
     const singN   = g('airtel').n   + g('moov').n   + g('mobile_money').n;
     const singXaf = g('airtel').xaf + g('moov').xaf + g('mobile_money').xaf;
+    // Un client ayant payé une fois par Airtel et une fois par Moov ne compte qu'une fois.
+    const singClients = Object.keys(Object.assign({}, g('airtel').clients, g('moov').clients, g('mobile_money').clients)).length;
     if(singN > 0){
-      vmHtml += `<tr style="border-top:2px solid var(--gold);"><td><b>Total SingPay</b></td><td><b>${singN}</b></td>`
+      vmHtml += `<tr style="border-top:2px solid var(--gold);"><td><b>Total SingPay</b></td><td><b>${singN}</b></td><td><b>${singClients}</b></td>`
         + `<td><b>${formatXaf(singXaf)}</b> générés<span class="cell-sub">net attendu dans le portefeuille ≈ <b>${formatXaf(Math.round(singXaf*0.975))}</b> après commission 2,5 % (une fois tous les reversements passés)</span></td></tr>`;
     }
     vmBody.innerHTML = vmHtml;
@@ -1855,13 +1861,12 @@ function normPhoneKey(p){
   if(d.length === 8) d = '0' + d;
   return d;
 }
-function computeRelances(){
-  const orders = adminData.orders || [];
-  // Une même personne peut apparaître sous plusieurs identifiants (une
-  // commande avec e-mail seul, une autre avec téléphone seul). L'e-mail et
-  // le téléphone d'une même commande sont donc reliés entre eux
-  // (union-find) : si l'un de ses essais a abouti, tous ses identifiants
-  // sont couverts et elle n'est pas relancée à tort.
+/* Identifiant de personne pour chaque commande. Une même personne peut
+   apparaître sous plusieurs identifiants (une commande avec e-mail seul, une
+   autre avec téléphone seul) : l'e-mail et le téléphone d'une même commande
+   sont donc reliés entre eux (union-find). Renvoie une fonction
+   commande → clé de la personne. */
+function personResolver(orders){
   const parent = {};
   const add = k => { if(!(k in parent)) parent[k] = k; return k; };
   const find = k => { add(k); while(parent[k] !== k){ parent[k] = parent[parent[k]]; k = parent[k]; } return k; };
@@ -1878,12 +1883,19 @@ function computeRelances(){
     for(let i=1;i<ks.length;i++) union(ks[0], ks[i]);
     add(ks[0]);
   });
+  return o => find(keysOf(o)[0]);
+}
+function computeRelances(){
+  const orders = adminData.orders || [];
+  // Si l'un des essais d'une personne a abouti, tous ses identifiants sont
+  // couverts et elle n'est pas relancée à tort.
+  const personOf = personResolver(orders);
   const paidRoots = {};
-  orders.forEach(o=>{ if(o.status === 'paid') paidRoots[find(keysOf(o)[0])] = true; });
+  orders.forEach(o=>{ if(o.status === 'paid') paidRoots[personOf(o)] = true; });
   const persons = {};
   orders.forEach(o=>{
     if(o.status === 'paid') return;
-    const key = find(keysOf(o)[0]);
+    const key = personOf(o);
     if(paidRoots[key]) return; // a fini par payer (sous un de ses identifiants)
     const entry = persons[key] || (persons[key] = {
       firstName:'', lastName:'', email:'', phone:'',
